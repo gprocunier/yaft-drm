@@ -564,28 +564,15 @@ int main(int argc, char **argv)
 			continue;
 
 #if defined(USE_DRM)
-		/* blink cursor only on select timeout (no fd activity) */
-		{
-			int any_fd_set = FD_ISSET(STDIN_FILENO, &fds) || FD_ISSET(term.fd, &fds)
-				|| (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds));
-			if (!any_fd_set) {
-				if (lazy_pending) {
-					lazy_pending = 0;
-					drm_erase_cursor(&fb);
-					refresh(&fb, &term);
-					drm_overlay_cursor(&fb);
-				}
-				blink_counter++;
-				if (blink_counter >= 33) {
-					blink_counter = 0;
-					blink_visible = !blink_visible;
-					drm_cursor_blink = blink_visible;
-					term.line_dirty[term.cursor.y] = true;
-					drm_erase_cursor(&fb);
-					refresh(&fb, &term);
-					drm_overlay_cursor(&fb);
-				}
-			}
+		blink_counter++;
+		if (blink_counter >= 33) {
+			blink_counter = 0;
+			blink_visible = !blink_visible;
+			drm_cursor_blink = blink_visible;
+			term.line_dirty[term.cursor.y] = true;
+			drm_erase_cursor(&fb);
+			refresh(&fb, &term);
+			drm_overlay_cursor(&fb);
 		}
 #endif
 

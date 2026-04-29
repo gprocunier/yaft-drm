@@ -1,6 +1,6 @@
 Name:           yaft
 Version:        0.2.9
-Release:        9%{?dist}
+Release:        10%{?dist}
 Summary:        Yet another framebuffer terminal with Sixel graphics support
 License:        MIT
 URL:            https://github.com/uobikiemukot/yaft
@@ -63,6 +63,10 @@ install -m755 yaft-drm-meslo %{buildroot}%{_bindir}/yaft-drm-meslo
 %{_datadir}/terminfo/y/yaft*
 
 %changelog
+* Tue Apr 29 2026 Greg Procunier - 0.2.9-10
+- Restore blink counter pacing for consistent frame timing
+- Idle 0% CPU, cockpit /system 19-21% on iDRAC Matrox G200eR2
+
 * Tue Apr 29 2026 Greg Procunier - 0.2.9-9
 - Fix mouse tracking: full-screen DRM flush (partial flush broken on QXL)
 - BMC-only evdev absolute detection (Avocent, IPMI, iLO, ATEN, AMI)

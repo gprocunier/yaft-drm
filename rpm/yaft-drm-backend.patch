@@ -615,7 +615,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	rm -f yaft yaft-drm yaft-drm-meslo yaft-drm-terminus yaftx mkfont_bdf glyph.h
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft-drm*' -N yaft-patch-base/yaft.c yaft-patch-mod/yaft.c
 --- yaft-patch-base/yaft.c	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/yaft.c	2026-04-29 14:27:07.628009908 -0400
++++ yaft-patch-mod/yaft.c	2026-04-29 17:00:25.142771811 -0400
 @@ -11,6 +11,325 @@
  #include "ctrlseq/dcs.h"
  #include "parse.h"
@@ -1003,7 +1003,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  	if (!term_init(&term, fb.info.width, fb.info.height)) {
  		logging(FATAL, "terminal initialize failed\n");
  		goto term_init_failed;
-@@ -193,38 +535,117 @@
+@@ -193,38 +535,104 @@
  	}
  	child_alive = true;
  
@@ -1037,28 +1037,15 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  			continue;
  
 +#if defined(USE_DRM)
-+		/* blink cursor only on select timeout (no fd activity) */
-+		{
-+			int any_fd_set = FD_ISSET(STDIN_FILENO, &fds) || FD_ISSET(term.fd, &fds)
-+				|| (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds));
-+			if (!any_fd_set) {
-+				if (lazy_pending) {
-+					lazy_pending = 0;
-+					drm_erase_cursor(&fb);
-+					refresh(&fb, &term);
-+					drm_overlay_cursor(&fb);
-+				}
-+				blink_counter++;
-+				if (blink_counter >= 33) {
-+					blink_counter = 0;
-+					blink_visible = !blink_visible;
-+					drm_cursor_blink = blink_visible;
-+					term.line_dirty[term.cursor.y] = true;
-+					drm_erase_cursor(&fb);
-+					refresh(&fb, &term);
-+					drm_overlay_cursor(&fb);
-+				}
-+			}
++		blink_counter++;
++		if (blink_counter >= 33) {
++			blink_counter = 0;
++			blink_visible = !blink_visible;
++			drm_cursor_blink = blink_visible;
++			term.line_dirty[term.cursor.y] = true;
++			drm_erase_cursor(&fb);
++			refresh(&fb, &term);
++			drm_overlay_cursor(&fb);
 +		}
 +#endif
 +
