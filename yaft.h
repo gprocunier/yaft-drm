@@ -39,7 +39,7 @@ enum misc {
 	BYTES_PER_PIXEL    = sizeof(uint32_t), /* pixel size of sixel pixmap data */
 	BITS_PER_SIXEL     = 6,                /* number of bits of a sixel */
 	ESCSEQ_SIZE        = 1024,             /* limit size of terminal escape sequence */
-	SELECT_TIMEOUT     = 50000,            /* 50ms for DRM, was 15ms */            /* used by select() */
+	SELECT_TIMEOUT     = 15000,            /* used by select() */
 	SLEEP_TIME         = 30000,            /* sleep time at EAGAIN, EWOULDBLOCK (usec) */
 	MAX_ARGS           = 16,               /* max parameters of csi/osc sequence */
 	UCS2_CHARS         = 0x10000,          /* number of UCS2 glyphs */

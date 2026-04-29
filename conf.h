@@ -13,7 +13,11 @@ enum {
 enum {
 	VERBOSE          = false,  /* write dump of input to stdout, debug message to stderr */
 	TABSTOP          = 8,      /* hardware tabstop */
+#if defined(USE_DRM)
+	LAZY_DRAW        = false,  /* DRM: always draw to keep XOR cursor consistent */
+#else
 	LAZY_DRAW        = true,   /* don't draw when input data size is larger than BUFSIZE */
+#endif
 	BACKGROUND_DRAW  = false,  /* always draw even if vt is not active */
 #if defined(USE_DRM)
 	VT_CONTROL       = false,  /* DRM: skip VT_SETMODE so gpm events flow */

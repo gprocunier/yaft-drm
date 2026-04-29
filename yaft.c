@@ -20,6 +20,7 @@ int drm_req_width = 0, drm_req_height = 0;
 int drm_cursor_blink = 1;
 int drm_mouse_reporting = 0;
 static const char *drm_exec_cmd = NULL;
+static int drm_mouse_mode = 0; /* 0=auto, 1=evdev, 2=relative */
 
 static const uint16_t arrow_cursor[16] = {
 	0xC000, 0xE000, 0xF000, 0xF800,
@@ -52,6 +53,10 @@ static void drm_parse_config(void)
 			strncpy(cmd_buf, line + 8, sizeof(cmd_buf) - 1);
 			cmd_buf[sizeof(cmd_buf) - 1] = '\0';
 			drm_exec_cmd = cmd_buf;
+		} else if (strncmp(line, "mouse=", 6) == 0) {
+			if (strcmp(line + 6, "evdev") == 0) drm_mouse_mode = 1;
+			else if (strcmp(line + 6, "relative") == 0) drm_mouse_mode = 2;
+			else if (strcmp(line + 6, "auto") == 0) drm_mouse_mode = 0;
 		}
 	}
 	fclose(f);
@@ -75,6 +80,12 @@ static void drm_parse_args(int argc, char **argv)
 		} else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
 			drm_exec_cmd = argv[i + 1];
 			i++;
+		} else if (strcmp(argv[i], "--mouse") == 0 && i + 1 < argc) {
+			if (strcmp(argv[i + 1], "evdev") == 0) drm_mouse_mode = 1;
+			else if (strcmp(argv[i + 1], "relative") == 0) drm_mouse_mode = 2;
+			else if (strcmp(argv[i + 1], "auto") == 0) drm_mouse_mode = 0;
+			else { fprintf(stderr, "invalid mouse mode '%s', use: auto, evdev, relative\n", argv[i + 1]); exit(1); }
+			i++;
 		}
 	}
 }
@@ -91,13 +102,12 @@ static int drm_mouse_abs_max_x = 32767, drm_mouse_abs_max_y = 32767;
 
 static int drm_find_evdev_abs(void)
 {
-	DIR *dir = opendir("/dev/input");
-	if (!dir) return -1;
-	struct dirent *ent;
-	while ((ent = readdir(dir))) {
-		if (strncmp(ent->d_name, "event", 5) != 0) continue;
-		char path[64];
-		snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+	char path[64];
+	char name[256];
+	const char *bmc_names[] = { "Avocent", "IPMI", "iLO", "AMI", "ATEN", NULL };
+
+	for (int n = 0; n < 32; n++) {
+		snprintf(path, sizeof(path), "/dev/input/event%d", n);
 		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
 		unsigned long evbits = 0, absbits = 0;
@@ -105,13 +115,18 @@ static int drm_find_evdev_abs(void)
 		if (evbits & (1 << EV_ABS)) {
 			ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), &absbits);
 			if ((absbits & (1 << ABS_X)) && (absbits & (1 << ABS_Y))) {
-				closedir(dir);
-				return fd;
+				memset(name, 0, sizeof(name));
+				ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+				for (const char **d = bmc_names; *d; d++) {
+					if (strstr(name, *d)) {
+						fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
+						return fd;
+					}
+				}
 			}
 		}
 		close(fd);
 	}
-	closedir(dir);
 	return -1;
 }
 
@@ -124,28 +139,33 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 	drm_mouse_x = width / 2;
 	drm_mouse_y = height / 2;
 
-	/* try evdev absolute device first (iDRAC, iLO, IPMI, VM virtual mouse) */
-	drm_mouse_fd = drm_find_evdev_abs();
-	if (drm_mouse_fd >= 0) {
-		drm_mouse_abs = 1;
-		struct input_absinfo absinfo;
-		if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_X), &absinfo) == 0)
-			drm_mouse_abs_max_x = absinfo.maximum;
-		if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_Y), &absinfo) == 0)
-			drm_mouse_abs_max_y = absinfo.maximum;
-		if (VERBOSE)
-			fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
-				drm_mouse_fd, drm_mouse_abs_max_x, drm_mouse_abs_max_y);
-		return;
+	if (drm_mouse_mode == 1 || (drm_mouse_mode == 0)) {
+		/* try evdev absolute for BMC devices (auto or forced evdev) */
+		drm_mouse_fd = drm_find_evdev_abs();
+		if (drm_mouse_fd >= 0) {
+			drm_mouse_abs = 1;
+			struct input_absinfo absinfo;
+			if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_X), &absinfo) == 0)
+				drm_mouse_abs_max_x = absinfo.maximum;
+			if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_Y), &absinfo) == 0)
+				drm_mouse_abs_max_y = absinfo.maximum;
+			if (VERBOSE)
+				fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
+					drm_mouse_fd, drm_mouse_abs_max_x, drm_mouse_abs_max_y);
+			return;
+		}
+		if (drm_mouse_mode == 1) {
+			fprintf(stderr, "MOUSE: no evdev absolute device found\n");
+			return;
+		}
 	}
 
-	/* fallback to PS/2 relative mouse */
+	/* PS/2 /dev/input/mice */
 	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK);
 	if (drm_mouse_fd >= 0) {
 		drm_mouse_abs = 0;
 		if (VERBOSE)
-			fprintf(stderr, "MOUSE: PS/2 relative fd=%d res=%dx%d\n",
-				drm_mouse_fd, width, height);
+			fprintf(stderr, "MOUSE: PS/2 relative fd=%d\n", drm_mouse_fd);
 	} else {
 		if (VERBOSE)
 			fprintf(stderr, "MOUSE: no mouse device found\n");
@@ -265,8 +285,32 @@ static void drm_mouse_handle(int master_fd, struct framebuffer_t *fb)
 				}
 			}
 		}
+	} else if (drm_mouse_abs == 2) {
+		/* evdev relative mode */
+		struct input_event ev;
+		static int rel_buttons = 0;
+		int btn_changed = 0;
+		while (read(drm_mouse_fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
+			if (ev.type == EV_REL) {
+				if (ev.code == REL_X) drm_mouse_x += ev.value * 3;
+				else if (ev.code == REL_Y) drm_mouse_y += ev.value * 3;
+			} else if (ev.type == EV_KEY) {
+				if (ev.code == BTN_LEFT) { if (ev.value) rel_buttons |= 1; else rel_buttons &= ~1; btn_changed = 1; }
+				else if (ev.code == BTN_RIGHT) { if (ev.value) rel_buttons |= 2; else rel_buttons &= ~2; btn_changed = 1; }
+				else if (ev.code == BTN_MIDDLE) { if (ev.value) rel_buttons |= 4; else rel_buttons &= ~4; btn_changed = 1; }
+			} else if (ev.type == EV_SYN && ev.code == SYN_REPORT) {
+				if (drm_mouse_x < 0) drm_mouse_x = 0;
+				if (drm_mouse_y < 0) drm_mouse_y = 0;
+				if (drm_mouse_x >= drm_mouse_px_w) drm_mouse_x = drm_mouse_px_w - 1;
+				if (drm_mouse_y >= drm_mouse_px_h) drm_mouse_y = drm_mouse_px_h - 1;
+				if (btn_changed) {
+					drm_mouse_emit(master_fd, rel_buttons);
+					btn_changed = 0;
+				}
+			}
+		}
 	} else {
-		/* PS/2 relative mode */
+		/* PS/2 relative mode (last resort) */
 		uint8_t pkt[3];
 		while (read(drm_mouse_fd, pkt, 3) == 3) {
 			int buttons = pkt[0] & 0x07;
@@ -551,19 +595,11 @@ int main(int argc, char **argv)
 		}
 #if defined(USE_DRM)
 		if (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds)) {
-			int old_mx = drm_mouse_x, old_my = drm_mouse_y;
 			drm_erase_cursor(&fb);
 			drm_mouse_handle(term.fd, &fb);
 			drm_overlay_cursor(&fb);
-			if (drm_mouse_x != old_mx || drm_mouse_y != old_my) {
-				/* only flush the old and new cursor regions */
-				int x1 = old_mx < drm_mouse_x ? old_mx : drm_mouse_x;
-				int y1 = old_my < drm_mouse_y ? old_my : drm_mouse_y;
-				int x2 = (old_mx > drm_mouse_x ? old_mx : drm_mouse_x) + 16;
-				int y2 = (old_my > drm_mouse_y ? old_my : drm_mouse_y) + 16;
-				if (x2 > fb.info.width) x2 = fb.info.width;
-				if (y2 > fb.info.height) y2 = fb.info.height;
-				drmModeClip clip = { x1, y1, x2 - x1, y2 - y1 };
+			{
+				drmModeClip clip = { 0, 0, fb.info.width, fb.info.height };
 				drmModeDirtyFB(fb.fd, drm_state.fb_id, &clip, 1);
 			}
 		}

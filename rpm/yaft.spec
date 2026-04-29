@@ -1,6 +1,6 @@
 Name:           yaft
 Version:        0.2.9
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Yet another framebuffer terminal with Sixel graphics support
 License:        MIT
 URL:            https://github.com/uobikiemukot/yaft
@@ -63,6 +63,14 @@ install -m755 yaft-drm-meslo %{buildroot}%{_bindir}/yaft-drm-meslo
 %{_datadir}/terminfo/y/yaft*
 
 %changelog
+* Tue Apr 29 2026 Greg Procunier - 0.2.9-9
+- Fix mouse tracking: full-screen DRM flush (partial flush broken on QXL)
+- BMC-only evdev absolute detection (Avocent, IPMI, iLO, ATEN, AMI)
+- PS/2 relative fallback for VMs and physical mice
+- --mouse evdev|relative|auto argument and mouse= config option
+- --res list to show available modes
+- Nerd Font icons from Meslo (3469 glyphs) with Terminus ASCII
+
 * Tue Apr 29 2026 Greg Procunier - 0.2.9-8
 - --res list to show supported modes
 - --res with invalid input gives clear error message
