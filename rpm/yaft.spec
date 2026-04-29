@@ -1,6 +1,6 @@
 Name:           yaft
 Version:        0.2.9
-Release:        7%{?dist}
+Release:        8%{?dist}
 Summary:        Yet another framebuffer terminal with Sixel graphics support
 License:        MIT
 URL:            https://github.com/uobikiemukot/yaft
@@ -63,6 +63,10 @@ install -m755 yaft-drm-meslo %{buildroot}%{_bindir}/yaft-drm-meslo
 %{_datadir}/terminfo/y/yaft*
 
 %changelog
+* Tue Apr 29 2026 Greg Procunier - 0.2.9-8
+- --res list to show supported modes
+- --res with invalid input gives clear error message
+
 * Tue Apr 29 2026 Greg Procunier - 0.2.9-7
 - Performance: LAZY_DRAW re-enabled with deferred flush on idle timeout
 - Performance: SELECT_TIMEOUT increased to 50ms for DRM builds

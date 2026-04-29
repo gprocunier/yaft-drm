@@ -62,9 +62,14 @@ static void drm_parse_args(int argc, char **argv)
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--res") == 0 && i + 1 < argc) {
 			int w, h;
-			if (sscanf(argv[i + 1], "%dx%d", &w, &h) == 2) {
+			if (strcmp(argv[i + 1], "list") == 0) {
+				drm_req_width = drm_req_height = -1;
+			} else if (sscanf(argv[i + 1], "%dx%d", &w, &h) == 2) {
 				drm_req_width = w;
 				drm_req_height = h;
+			} else {
+				fprintf(stderr, "invalid resolution '%s', use --res WIDTHxHEIGHT or --res list\n", argv[i + 1]);
+				exit(1);
 			}
 			i++;
 		} else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {

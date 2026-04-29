@@ -156,7 +156,17 @@ bool set_fbinfo(int fd, struct fb_info_t *info)
 	}
 
 	drm_state.mode = conn->modes[0];
-	if (drm_req_width > 0 && drm_req_height > 0) {
+	if (drm_req_width == -1) {
+		fprintf(stderr, "Supported modes:\n");
+		for (i = 0; i < conn->count_modes; i++) {
+			fprintf(stderr, "  %dx%d%s\n",
+				conn->modes[i].hdisplay, conn->modes[i].vdisplay,
+				(conn->modes[i].type & DRM_MODE_TYPE_PREFERRED) ? " (preferred)" : "");
+		}
+		drmModeFreeConnector(conn);
+		drmModeFreeResources(res);
+		return false;
+	} else if (drm_req_width > 0 && drm_req_height > 0) {
 		int found = 0;
 		for (i = 0; i < conn->count_modes; i++) {
 			if ((int)conn->modes[i].hdisplay == drm_req_width &&
