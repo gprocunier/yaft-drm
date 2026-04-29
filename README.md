@@ -139,6 +139,22 @@ Command-line arguments override config file settings.
 - `--res WxH` resolution selection with mode validation
 - Baked-in Nerd Font / powerline glyph support
 
+## Tested Hardware
+
+| Platform | Display Adapter | Mouse Input | Status |
+|---|---|---|---|
+| Dell PowerEdge (iDRAC 8) | Matrox G200eR2 | Avocent USB (evdev absolute) | Validated |
+| KVM/QEMU (virt-manager) | QXL / Virtio VGA | QEMU USB Tablet (evdev absolute) | Validated |
+| KVM/QEMU (libvirt) | Virtio GPU | VirtualPS/2 VMware VMMouse | Validated |
+
+### Performance (Dell iDRAC 8, Matrox G200eR2, 1440x900)
+
+| State | CPU Usage |
+|---|---|
+| Idle (shell prompt) | 0-2% |
+| Active terminal use | ~9% |
+| brow6el web browsing | 15-30% |
+
 ## Requirements
 
 - Linux kernel with DRM/KMS (any modern kernel)

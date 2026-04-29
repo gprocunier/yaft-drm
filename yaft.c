@@ -493,6 +493,7 @@ int main(int argc, char **argv)
 #if defined(USE_DRM)
 	int blink_counter = 0;
 	int blink_visible = 1;
+	int lazy_pending = 0;
 #endif
 
 	/* main loop */
@@ -510,21 +511,34 @@ int main(int argc, char **argv)
 #endif
 		}
 
-#if defined(USE_DRM)
-		blink_counter++;
-		if (blink_counter >= 33) {
-			blink_counter = 0;
-			blink_visible = !blink_visible;
-			drm_cursor_blink = blink_visible;
-			term.line_dirty[term.cursor.y] = true;
-			drm_erase_cursor(&fb);
-			refresh(&fb, &term);
-			drm_overlay_cursor(&fb);
-		}
-#endif
-
 		if (check_fds(&fds, &tv, STDIN_FILENO, term.fd) == -1)
 			continue;
+
+#if defined(USE_DRM)
+		/* blink cursor only on select timeout (no fd activity) */
+		{
+			int any_fd_set = FD_ISSET(STDIN_FILENO, &fds) || FD_ISSET(term.fd, &fds)
+				|| (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds));
+			if (!any_fd_set) {
+				if (lazy_pending) {
+					lazy_pending = 0;
+					drm_erase_cursor(&fb);
+					refresh(&fb, &term);
+					drm_overlay_cursor(&fb);
+				}
+				blink_counter++;
+				if (blink_counter >= 33) {
+					blink_counter = 0;
+					blink_visible = !blink_visible;
+					drm_cursor_blink = blink_visible;
+					term.line_dirty[term.cursor.y] = true;
+					drm_erase_cursor(&fb);
+					refresh(&fb, &term);
+					drm_overlay_cursor(&fb);
+				}
+			}
+		}
+#endif
 
 		if (FD_ISSET(STDIN_FILENO, &fds)) {
 			if ((size = read(STDIN_FILENO, buf, BUFSIZE)) > 0)
@@ -567,8 +581,12 @@ int main(int argc, char **argv)
 				}
 #endif
 				parse(&term, buf, size);
-				if (LAZY_DRAW && size == BUFSIZE)
+				if (LAZY_DRAW && size == BUFSIZE) {
+#if defined(USE_DRM)
+					lazy_pending = 1;
+#endif
 					continue;
+				}
 #if defined(USE_DRM)
 				drm_erase_cursor(&fb);
 #endif

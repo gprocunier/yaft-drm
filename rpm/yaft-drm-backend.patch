@@ -1,15 +1,9 @@
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-drm -x yaft-drm-meslo -x yaft-drm-terminus -N yaft-patch-base/conf.h yaft-patch-mod/conf.h
 --- yaft-patch-base/conf.h	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/conf.h	2026-04-29 02:25:15.661706184 -0400
-@@ -13,10 +13,19 @@
- enum {
- 	VERBOSE          = false,  /* write dump of input to stdout, debug message to stderr */
++++ yaft-patch-mod/conf.h	2026-04-29 11:09:07.256939242 -0400
+@@ -15,8 +15,13 @@
  	TABSTOP          = 8,      /* hardware tabstop */
-+#if defined(USE_DRM)
-+	LAZY_DRAW        = false,  /* always draw immediately under DRM */
-+#else
  	LAZY_DRAW        = true,   /* don't draw when input data size is larger than BUFSIZE */
-+#endif
  	BACKGROUND_DRAW  = false,  /* always draw even if vt is not active */
 +#if defined(USE_DRM)
 +	VT_CONTROL       = false,  /* DRM: skip VT_SETMODE so gpm events flow */
@@ -21,7 +15,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
  	SUBSTITUTE_HALF  = 0x0020, /* used for missing glyph(single width): U+0020 (SPACE) */
  	SUBSTITUTE_WIDE  = 0x3000, /* used for missing glyph(double width): U+3000 (IDEOGRAPHIC SPACE) */
  	REPLACEMENT_CHAR = 0x003F, /* used for malformed UTF-8 sequence   : U+003F (QUESTION MARK) */
-@@ -26,7 +35,9 @@
+@@ -26,7 +31,9 @@
  const char *term_name = "yaft-256color";
  
  /* framubuffer device */
@@ -605,7 +599,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
 +	rm -f yaft yaft-drm yaft-drm-meslo yaft-drm-terminus yaftx mkfont_bdf glyph.h
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-drm -x yaft-drm-meslo -x yaft-drm-terminus -N yaft-patch-base/yaft.c yaft-patch-mod/yaft.c
 --- yaft-patch-base/yaft.c	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/yaft.c	2026-04-29 10:50:25.241993589 -0400
++++ yaft-patch-mod/yaft.c	2026-04-29 11:13:53.704648499 -0400
 @@ -11,6 +11,276 @@
  #include "ctrlseq/dcs.h"
  #include "parse.h"
@@ -944,7 +938,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
  	if (!term_init(&term, fb.info.width, fb.info.height)) {
  		logging(FATAL, "terminal initialize failed\n");
  		goto term_init_failed;
-@@ -193,14 +486,42 @@
+@@ -193,38 +486,125 @@
  	}
  	child_alive = true;
  
@@ -955,6 +949,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
 +#if defined(USE_DRM)
 +	int blink_counter = 0;
 +	int blink_visible = 1;
++	int lazy_pending = 0;
 +#endif
 +
  	/* main loop */
@@ -967,28 +962,42 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
 +#if defined(USE_DRM)
 +			drm_erase_cursor(&fb);
 +#endif
-+			refresh(&fb, &term);
-+#if defined(USE_DRM)
-+			drm_overlay_cursor(&fb);
-+#endif
-+		}
-+
-+#if defined(USE_DRM)
-+		blink_counter++;
-+		if (blink_counter >= 33) {
-+			blink_counter = 0;
-+			blink_visible = !blink_visible;
-+			drm_cursor_blink = blink_visible;
-+			term.line_dirty[term.cursor.y] = true;
-+			drm_erase_cursor(&fb);
  			refresh(&fb, &term);
++#if defined(USE_DRM)
 +			drm_overlay_cursor(&fb);
- 		}
 +#endif
+ 		}
  
  		if (check_fds(&fds, &tv, STDIN_FILENO, term.fd) == -1)
  			continue;
-@@ -209,22 +530,63 @@
+ 
++#if defined(USE_DRM)
++		/* blink cursor only on select timeout (no fd activity) */
++		{
++			int any_fd_set = FD_ISSET(STDIN_FILENO, &fds) || FD_ISSET(term.fd, &fds)
++				|| (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds));
++			if (!any_fd_set) {
++				if (lazy_pending) {
++					lazy_pending = 0;
++					drm_erase_cursor(&fb);
++					refresh(&fb, &term);
++					drm_overlay_cursor(&fb);
++				}
++				blink_counter++;
++				if (blink_counter >= 33) {
++					blink_counter = 0;
++					blink_visible = !blink_visible;
++					drm_cursor_blink = blink_visible;
++					term.line_dirty[term.cursor.y] = true;
++					drm_erase_cursor(&fb);
++					refresh(&fb, &term);
++					drm_overlay_cursor(&fb);
++				}
++			}
++		}
++#endif
++
+ 		if (FD_ISSET(STDIN_FILENO, &fds)) {
  			if ((size = read(STDIN_FILENO, buf, BUFSIZE)) > 0)
  				ewrite(term.fd, buf, size);
  		}
@@ -1029,9 +1038,14 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
 +				}
 +#endif
  				parse(&term, buf, size);
- 				if (LAZY_DRAW && size == BUFSIZE)
+-				if (LAZY_DRAW && size == BUFSIZE)
 -					continue; /* maybe more data arrives soon */
++				if (LAZY_DRAW && size == BUFSIZE) {
++#if defined(USE_DRM)
++					lazy_pending = 1;
++#endif
 +					continue;
++				}
 +#if defined(USE_DRM)
 +				drm_erase_cursor(&fb);
 +#endif
@@ -1054,3 +1068,15 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
  	return EXIT_SUCCESS;
  
  	/* error exit */
+diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-drm -x yaft-drm-meslo -x yaft-drm-terminus -N yaft-patch-base/yaft.h yaft-patch-mod/yaft.h
+--- yaft-patch-base/yaft.h	2015-07-26 22:36:45.000000000 -0400
++++ yaft-patch-mod/yaft.h	2026-04-29 11:09:44.181203867 -0400
+@@ -39,7 +39,7 @@
+ 	BYTES_PER_PIXEL    = sizeof(uint32_t), /* pixel size of sixel pixmap data */
+ 	BITS_PER_SIXEL     = 6,                /* number of bits of a sixel */
+ 	ESCSEQ_SIZE        = 1024,             /* limit size of terminal escape sequence */
+-	SELECT_TIMEOUT     = 15000,            /* used by select() */
++	SELECT_TIMEOUT     = 50000,            /* 50ms for DRM, was 15ms */            /* used by select() */
+ 	SLEEP_TIME         = 30000,            /* sleep time at EAGAIN, EWOULDBLOCK (usec) */
+ 	MAX_ARGS           = 16,               /* max parameters of csi/osc sequence */
+ 	UCS2_CHARS         = 0x10000,          /* number of UCS2 glyphs */
