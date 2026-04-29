@@ -78,23 +78,72 @@ static int drm_mouse_fd = -1;
 static int drm_mouse_x = 0, drm_mouse_y = 0;
 static int drm_mouse_cols = 80, drm_mouse_lines = 24;
 static int drm_mouse_px_w = 0, drm_mouse_px_h = 0;
+static int drm_mouse_abs = 0; /* 1 = evdev absolute, 0 = PS/2 relative */
+static int drm_mouse_abs_max_x = 32767, drm_mouse_abs_max_y = 32767;
+
+#include <linux/input.h>
+#include <dirent.h>
+
+static int drm_find_evdev_abs(void)
+{
+	DIR *dir = opendir("/dev/input");
+	if (!dir) return -1;
+	struct dirent *ent;
+	while ((ent = readdir(dir))) {
+		if (strncmp(ent->d_name, "event", 5) != 0) continue;
+		char path[64];
+		snprintf(path, sizeof(path), "/dev/input/%s", ent->d_name);
+		int fd = open(path, O_RDONLY | O_NONBLOCK);
+		if (fd < 0) continue;
+		unsigned long evbits = 0, absbits = 0;
+		ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), &evbits);
+		if (evbits & (1 << EV_ABS)) {
+			ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), &absbits);
+			if ((absbits & (1 << ABS_X)) && (absbits & (1 << ABS_Y))) {
+				closedir(dir);
+				return fd;
+			}
+		}
+		close(fd);
+	}
+	closedir(dir);
+	return -1;
+}
 
 static void drm_mouse_init(int width, int height, int cols, int lines)
 {
+	drm_mouse_cols = cols;
+	drm_mouse_lines = lines;
+	drm_mouse_px_w = width;
+	drm_mouse_px_h = height;
+	drm_mouse_x = width / 2;
+	drm_mouse_y = height / 2;
+
+	/* try evdev absolute device first (iDRAC, iLO, IPMI, VM virtual mouse) */
+	drm_mouse_fd = drm_find_evdev_abs();
+	if (drm_mouse_fd >= 0) {
+		drm_mouse_abs = 1;
+		struct input_absinfo absinfo;
+		if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_X), &absinfo) == 0)
+			drm_mouse_abs_max_x = absinfo.maximum;
+		if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_Y), &absinfo) == 0)
+			drm_mouse_abs_max_y = absinfo.maximum;
+		if (VERBOSE)
+			fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
+				drm_mouse_fd, drm_mouse_abs_max_x, drm_mouse_abs_max_y);
+		return;
+	}
+
+	/* fallback to PS/2 relative mouse */
 	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK);
 	if (drm_mouse_fd >= 0) {
-		drm_mouse_cols = cols;
-		drm_mouse_lines = lines;
-		drm_mouse_px_w = width;
-		drm_mouse_px_h = height;
-		drm_mouse_x = width / 2;
-		drm_mouse_y = height / 2;
+		drm_mouse_abs = 0;
 		if (VERBOSE)
-			fprintf(stderr, "MOUSE: opened /dev/input/mice fd=%d res=%dx%d cells=%dx%d\n",
-				drm_mouse_fd, width, height, cols, lines);
+			fprintf(stderr, "MOUSE: PS/2 relative fd=%d res=%dx%d\n",
+				drm_mouse_fd, width, height);
 	} else {
 		if (VERBOSE)
-			fprintf(stderr, "MOUSE: failed to open /dev/input/mice (errno=%d)\n", errno);
+			fprintf(stderr, "MOUSE: no mouse device found\n");
 	}
 }
 
@@ -147,53 +196,86 @@ static void drm_overlay_cursor(struct framebuffer_t *fb)
 	cursor_drawn_y = drm_mouse_y;
 }
 
+static void drm_mouse_emit(int master_fd, int buttons)
+{
+	static int prev_buttons = 0;
+	int cell_x = (drm_mouse_x / CELL_WIDTH) + 1;
+	int cell_y = (drm_mouse_y / CELL_HEIGHT) + 1;
+
+	if (drm_mouse_reporting && buttons != prev_buttons) {
+		char buf[64];
+		int len;
+		if ((buttons & 1) && !(prev_buttons & 1)) {
+			len = snprintf(buf, sizeof(buf), "\033[<0;%d;%dM", cell_x, cell_y);
+			if (len > 0) write(master_fd, buf, len);
+		} else if (!(buttons & 1) && (prev_buttons & 1)) {
+			len = snprintf(buf, sizeof(buf), "\033[<0;%d;%dm", cell_x, cell_y);
+			if (len > 0) write(master_fd, buf, len);
+		}
+		if ((buttons & 2) && !(prev_buttons & 2)) {
+			len = snprintf(buf, sizeof(buf), "\033[<2;%d;%dM", cell_x, cell_y);
+			if (len > 0) write(master_fd, buf, len);
+		} else if (!(buttons & 2) && (prev_buttons & 2)) {
+			len = snprintf(buf, sizeof(buf), "\033[<2;%d;%dm", cell_x, cell_y);
+			if (len > 0) write(master_fd, buf, len);
+		}
+		if ((buttons & 4) && !(prev_buttons & 4)) {
+			len = snprintf(buf, sizeof(buf), "\033[<1;%d;%dM", cell_x, cell_y);
+			if (len > 0) write(master_fd, buf, len);
+		} else if (!(buttons & 4) && (prev_buttons & 4)) {
+			len = snprintf(buf, sizeof(buf), "\033[<1;%d;%dm", cell_x, cell_y);
+			if (len > 0) write(master_fd, buf, len);
+		}
+		prev_buttons = buttons;
+	}
+}
+
 static void drm_mouse_handle(int master_fd, struct framebuffer_t *fb)
 {
 	(void)fb;
-	uint8_t pkt[3];
-	while (read(drm_mouse_fd, pkt, 3) == 3) {
-		int buttons = pkt[0] & 0x07;
-		int dx = ((pkt[0] & 0x10) ? (int)pkt[1] - 256 : pkt[1]) * 3;
-		int dy = ((pkt[0] & 0x20) ? (int)pkt[2] - 256 : pkt[2]) * 3;
 
-		drm_mouse_x += dx;
-		drm_mouse_y -= dy;
-		if (drm_mouse_x < 0) drm_mouse_x = 0;
-		if (drm_mouse_y < 0) drm_mouse_y = 0;
-		if (drm_mouse_x >= drm_mouse_px_w) drm_mouse_x = drm_mouse_px_w - 1;
-		if (drm_mouse_y >= drm_mouse_px_h) drm_mouse_y = drm_mouse_px_h - 1;
+	if (drm_mouse_abs) {
+		/* evdev absolute mode */
+		struct input_event ev;
+		static int abs_buttons = 0;
+		int btn_changed = 0;
+		while (read(drm_mouse_fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
+			if (ev.type == EV_ABS) {
+				if (ev.code == ABS_X)
+					drm_mouse_x = (int)((long)ev.value * drm_mouse_px_w / drm_mouse_abs_max_x);
+				else if (ev.code == ABS_Y)
+					drm_mouse_y = (int)((long)ev.value * drm_mouse_px_h / drm_mouse_abs_max_y);
+			} else if (ev.type == EV_KEY) {
+				if (ev.code == BTN_LEFT) { if (ev.value) abs_buttons |= 1; else abs_buttons &= ~1; btn_changed = 1; }
+				else if (ev.code == BTN_RIGHT) { if (ev.value) abs_buttons |= 2; else abs_buttons &= ~2; btn_changed = 1; }
+				else if (ev.code == BTN_MIDDLE) { if (ev.value) abs_buttons |= 4; else abs_buttons &= ~4; btn_changed = 1; }
+			} else if (ev.type == EV_SYN && ev.code == SYN_REPORT) {
+				if (drm_mouse_x < 0) drm_mouse_x = 0;
+				if (drm_mouse_y < 0) drm_mouse_y = 0;
+				if (drm_mouse_x >= drm_mouse_px_w) drm_mouse_x = drm_mouse_px_w - 1;
+				if (drm_mouse_y >= drm_mouse_px_h) drm_mouse_y = drm_mouse_px_h - 1;
+				if (btn_changed) {
+					drm_mouse_emit(master_fd, abs_buttons);
+					btn_changed = 0;
+				}
+			}
+		}
+	} else {
+		/* PS/2 relative mode */
+		uint8_t pkt[3];
+		while (read(drm_mouse_fd, pkt, 3) == 3) {
+			int buttons = pkt[0] & 0x07;
+			int dx = ((pkt[0] & 0x10) ? (int)pkt[1] - 256 : pkt[1]) * 3;
+			int dy = ((pkt[0] & 0x20) ? (int)pkt[2] - 256 : pkt[2]) * 3;
 
-		/* convert pixel position to cell position for xterm escape */
-		int cell_x = (drm_mouse_x / CELL_WIDTH) + 1;
-		int cell_y = (drm_mouse_y / CELL_HEIGHT) + 1;
+			drm_mouse_x += dx;
+			drm_mouse_y -= dy;
+			if (drm_mouse_x < 0) drm_mouse_x = 0;
+			if (drm_mouse_y < 0) drm_mouse_y = 0;
+			if (drm_mouse_x >= drm_mouse_px_w) drm_mouse_x = drm_mouse_px_w - 1;
+			if (drm_mouse_y >= drm_mouse_px_h) drm_mouse_y = drm_mouse_px_h - 1;
 
-		/* generate xterm SGR mouse events only when app has enabled reporting */
-		static int prev_buttons = 0;
-		if (drm_mouse_reporting && buttons != prev_buttons) {
-			char buf[64];
-			int len;
-			if ((buttons & 1) && !(prev_buttons & 1)) {
-				len = snprintf(buf, sizeof(buf), "\033[<0;%d;%dM", cell_x, cell_y);
-				if (len > 0) write(master_fd, buf, len);
-			} else if (!(buttons & 1) && (prev_buttons & 1)) {
-				len = snprintf(buf, sizeof(buf), "\033[<0;%d;%dm", cell_x, cell_y);
-				if (len > 0) write(master_fd, buf, len);
-			}
-			if ((buttons & 2) && !(prev_buttons & 2)) {
-				len = snprintf(buf, sizeof(buf), "\033[<2;%d;%dM", cell_x, cell_y);
-				if (len > 0) write(master_fd, buf, len);
-			} else if (!(buttons & 2) && (prev_buttons & 2)) {
-				len = snprintf(buf, sizeof(buf), "\033[<2;%d;%dm", cell_x, cell_y);
-				if (len > 0) write(master_fd, buf, len);
-			}
-			if ((buttons & 4) && !(prev_buttons & 4)) {
-				len = snprintf(buf, sizeof(buf), "\033[<1;%d;%dM", cell_x, cell_y);
-				if (len > 0) write(master_fd, buf, len);
-			} else if (!(buttons & 4) && (prev_buttons & 4)) {
-				len = snprintf(buf, sizeof(buf), "\033[<1;%d;%dm", cell_x, cell_y);
-				if (len > 0) write(master_fd, buf, len);
-			}
-			prev_buttons = buttons;
+			drm_mouse_emit(master_fd, buttons);
 		}
 	}
 }
@@ -450,11 +532,19 @@ int main(int argc, char **argv)
 		}
 #if defined(USE_DRM)
 		if (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds)) {
+			int old_mx = drm_mouse_x, old_my = drm_mouse_y;
 			drm_erase_cursor(&fb);
 			drm_mouse_handle(term.fd, &fb);
 			drm_overlay_cursor(&fb);
-			{
-				drmModeClip clip = { 0, 0, fb.info.width, fb.info.height };
+			if (drm_mouse_x != old_mx || drm_mouse_y != old_my) {
+				/* only flush the old and new cursor regions */
+				int x1 = old_mx < drm_mouse_x ? old_mx : drm_mouse_x;
+				int y1 = old_my < drm_mouse_y ? old_my : drm_mouse_y;
+				int x2 = (old_mx > drm_mouse_x ? old_mx : drm_mouse_x) + 16;
+				int y2 = (old_my > drm_mouse_y ? old_my : drm_mouse_y) + 16;
+				if (x2 > fb.info.width) x2 = fb.info.width;
+				if (y2 > fb.info.height) y2 = fb.info.height;
+				drmModeClip clip = { x1, y1, x2 - x1, y2 - y1 };
 				drmModeDirtyFB(fb.fd, drm_state.fb_id, &clip, 1);
 			}
 		}
