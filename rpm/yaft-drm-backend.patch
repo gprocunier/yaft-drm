@@ -605,7 +605,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
 +	rm -f yaft yaft-drm yaft-drm-meslo yaft-drm-terminus yaftx mkfont_bdf glyph.h
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-drm -x yaft-drm-meslo -x yaft-drm-terminus -N yaft-patch-base/yaft.c yaft-patch-mod/yaft.c
 --- yaft-patch-base/yaft.c	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/yaft.c	2026-04-29 04:06:34.680553441 -0400
++++ yaft-patch-mod/yaft.c	2026-04-29 10:50:25.241993589 -0400
 @@ -11,6 +11,276 @@
  #include "ctrlseq/dcs.h"
  #include "parse.h"
@@ -1021,7 +1021,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x yaft-
 +				for (ssize_t s = 0; s + 7 < size; s++) {
 +					if (buf[s] == '\033' && buf[s+1] == '[' && buf[s+2] == '?'
 +					    && buf[s+3] == '1' && buf[s+4] == '0' && buf[s+5] == '0') {
-+						if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3') && buf[s+7] == 'h')
++						if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3' || buf[s+6] == '6') && buf[s+7] == 'h')
 +							drm_mouse_reporting = 1;
 +						else if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3') && buf[s+7] == 'l')
 +							drm_mouse_reporting = 0;

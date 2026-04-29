@@ -559,7 +559,7 @@ int main(int argc, char **argv)
 				for (ssize_t s = 0; s + 7 < size; s++) {
 					if (buf[s] == '\033' && buf[s+1] == '[' && buf[s+2] == '?'
 					    && buf[s+3] == '1' && buf[s+4] == '0' && buf[s+5] == '0') {
-						if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3') && buf[s+7] == 'h')
+						if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3' || buf[s+6] == '6') && buf[s+7] == 'h')
 							drm_mouse_reporting = 1;
 						else if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3') && buf[s+7] == 'l')
 							drm_mouse_reporting = 0;

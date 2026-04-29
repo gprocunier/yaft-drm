@@ -1,6 +1,6 @@
 Name:           yaft
 Version:        0.2.9
-Release:        5%{?dist}
+Release:        6%{?dist}
 Summary:        Yet another framebuffer terminal with Sixel graphics support
 License:        MIT
 URL:            https://github.com/uobikiemukot/yaft
@@ -63,6 +63,11 @@ install -m755 yaft-drm-meslo %{buildroot}%{_bindir}/yaft-drm-meslo
 %{_datadir}/terminfo/y/yaft*
 
 %changelog
+* Tue Apr 29 2026 Greg Procunier - 0.2.9-6
+- Symbols Nerd Font icons from Meslo with proper 10-to-8px scaling
+- Hand-crafted powerline rounded caps (E0B4, E0B6)
+- Fix mouse mode detection for SGR 1006 sequences
+
 * Tue Apr 29 2026 Greg Procunier - 0.2.9-5
 - evdev absolute mouse support for iDRAC, iLO, IPMI, and VM virtual mice
 - Auto-detect evdev absolute vs PS/2 relative mouse devices
