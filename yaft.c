@@ -600,6 +600,30 @@ int main()
 	if (setlocale(LC_ALL, "") == NULL) /* for wcwidth() */
 		logging(WARN, "setlocale falied\n");
 
+#if defined(USE_DRM)
+	drm_parse_config();
+	drm_parse_args(argc, argv);
+
+	if (drm_fallback) {
+		int on_console = 0;
+		int ttyfd = open("/dev/tty", O_RDWR);
+		if (ttyfd >= 0) {
+			struct vt_stat vtstat;
+			if (ioctl(ttyfd, VT_GETSTATE, &vtstat) == 0)
+				on_console = 1;
+			close(ttyfd);
+		}
+		if (!on_console) {
+			extern const char *shell_cmd;
+			char *sh = getenv("SHELL");
+			if (!sh || strstr(sh, "yaft")) sh = (char *)shell_cmd;
+			execl(sh, sh, "--login", (char *)NULL);
+			perror("execl");
+			return EXIT_FAILURE;
+		}
+	}
+#endif
+
 	if (!fb_init(&fb)) {
 		logging(FATAL, "framebuffer initialize failed\n");
 #if defined(USE_DRM)
