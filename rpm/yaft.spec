@@ -1,6 +1,6 @@
 Name:           yaft
 Version:        0.2.9
-Release:        11%{?dist}
+Release:        12%{?dist}
 Summary:        Yet another framebuffer terminal with Sixel graphics support
 License:        MIT
 URL:            https://github.com/uobikiemukot/yaft
@@ -26,9 +26,7 @@ device, with built-in mouse support via /dev/input/mice, arrow cursor,
 true color approximation, and configurable resolution. Works on modern
 kernels (Fedora 43+, RHEL 10+) where CONFIG_FB_DEVICE is disabled.
 
-Two font variants are provided:
-  yaft-drm           - Terminus with powerline glyphs (8x16, default)
-  yaft-drm-meslo     - MesloLGL Nerd Font Mono (10x23)
+yaft-drm uses Terminus font with 3469 Nerd Font icons (8x16 cells).
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -39,30 +37,30 @@ export CFLAGS="%{optflags}"
 # Build legacy fbdev version with default font
 %make_build yaft
 
-# Build DRM Terminus variant (default)
+# Build DRM variant with Terminus + Nerd Font icons
 cp %{SOURCE2} glyph.h
 cc -o yaft-drm yaft.c %{optflags} -DUSE_DRM $(pkg-config --cflags libdrm) $(pkg-config --libs libdrm)
-
-# Build DRM Meslo variant
-cp %{SOURCE1} glyph.h
-cc -o yaft-drm-meslo yaft.c %{optflags} -DUSE_DRM $(pkg-config --cflags libdrm) $(pkg-config --libs libdrm)
 
 %install
 %make_install PREFIX=%{buildroot}%{_prefix} MANPREFIX=%{buildroot}%{_mandir}
 install -m755 yaft-drm %{buildroot}%{_bindir}/yaft-drm
-install -m755 yaft-drm-meslo %{buildroot}%{_bindir}/yaft-drm-meslo
 
 %files
 %license LICENSE
 %doc README.md ChangeLog
 %{_bindir}/yaft
 %{_bindir}/yaft-drm
-%{_bindir}/yaft-drm-meslo
 %{_bindir}/yaft_wall
 %{_mandir}/man1/yaft.1*
 %{_datadir}/terminfo/y/yaft*
 
 %changelog
+* Wed Apr 30 2026 Greg Procunier - 0.2.9-12
+- --fallback mode: exec shell when no DRM console available
+- VT console detection prevents DRM takeover from SSH sessions
+- Global config /etc/yaft-drm.conf with user override ~/.yaft-drm.conf
+- Remove yaft-drm-meslo variant
+
 * Wed Apr 30 2026 Greg Procunier - 0.2.9-11
 - Security: drop root privileges in child shell via SUDO_UID/SUDO_GID
 - Security: config file ownership and permission validation

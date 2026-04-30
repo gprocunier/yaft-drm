@@ -55,7 +55,6 @@ sudo dnf install yaft
 
 This installs:
 - `yaft-drm` — Terminus + Nerd Font icons, 8x16 cells (default)
-- `yaft-drm-meslo` — MesloLGL Nerd Font Mono, 10x23 cells
 - `yaft` — legacy fbdev version (for kernels with `/dev/fb0`)
 
 The COPR also provides `brow6el` and `gpm-mouse-shim` packages.
@@ -66,10 +65,8 @@ The COPR also provides `brow6el` and `gpm-mouse-shim` packages.
 sudo dnf install gcc make ncurses libdrm-devel
 
 make yaft-drm-terminus    # Terminus + Nerd Font icons (default)
-make yaft-drm-meslo       # MesloLGL Nerd Font Mono
 
 sudo install -m755 yaft-drm-terminus /usr/local/bin/yaft-drm
-sudo install -m755 yaft-drm-meslo /usr/local/bin/yaft-drm-meslo
 ```
 
 ### RPM Build
@@ -103,7 +100,6 @@ sudo yaft-drm --mouse evdev      # BMC absolute positioning
 sudo yaft-drm --mouse relative   # PS/2 relative
 
 # MesloLGL Nerd Font variant
-sudo yaft-drm-meslo --res 1920x1080
 ```
 
 ## Configuration
@@ -150,7 +146,6 @@ Command-line arguments override config file settings.
 | Binary | Font | Cell Size | At 1920x1080 |
 |---|---|---|---|
 | `yaft-drm` | Terminus + 3469 Nerd Font icons | 8x16 | 240x67 cells |
-| `yaft-drm-meslo` | MesloLGL Nerd Font Mono | 10x23 | 192x46 cells |
 
 ## Key Differences from Upstream yaft
 

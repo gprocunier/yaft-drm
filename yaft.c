@@ -22,6 +22,7 @@ int drm_cursor_blink = 1;
 int drm_mouse_reporting = 0;
 static const char *drm_exec_cmd = NULL;
 static int drm_mouse_mode = 0; /* 0=auto, 1=evdev, 2=relative */
+static int drm_fallback = 0;
 
 static const uint16_t arrow_cursor[16] = {
 	0xC000, 0xE000, 0xF000, 0xF800,
@@ -30,12 +31,9 @@ static const uint16_t arrow_cursor[16] = {
 	0x0780, 0x0780, 0x03C0, 0x0000,
 };
 
-static void drm_parse_config(void)
+static void drm_parse_config_file(const char *path)
 {
-	char path[256];
-	const char *home = getenv("HOME");
-	if (!home) return;
-	snprintf(path, sizeof(path), "%s/.yaft-drm.conf", home);
+	static char cmd_buf[1024];
 	struct stat cfg_st;
 	if (stat(path, &cfg_st) != 0) return;
 	if ((cfg_st.st_mode & S_IWOTH) || (cfg_st.st_uid != 0 && cfg_st.st_uid != getuid())) {
@@ -45,10 +43,8 @@ static void drm_parse_config(void)
 	FILE *f = fopen(path, "r");
 	if (!f) return;
 	char line[256];
-	static char cmd_buf[1024];
 	while (fgets(line, sizeof(line), f)) {
 		if (line[0] == '#' || line[0] == '\n') continue;
-		/* strip trailing newline */
 		char *nl = strchr(line, '\n');
 		if (nl) *nl = '\0';
 
@@ -60,6 +56,10 @@ static void drm_parse_config(void)
 			strncpy(cmd_buf, line + 8, sizeof(cmd_buf) - 1);
 			cmd_buf[sizeof(cmd_buf) - 1] = '\0';
 			drm_exec_cmd = cmd_buf;
+		} else if (strcmp(line, "fallback=true") == 0) {
+			drm_fallback = 1;
+		} else if (strcmp(line, "fallback=false") == 0) {
+			drm_fallback = 0;
 		} else if (strncmp(line, "mouse=", 6) == 0) {
 			if (strcmp(line + 6, "evdev") == 0) drm_mouse_mode = 1;
 			else if (strcmp(line + 6, "relative") == 0) drm_mouse_mode = 2;
@@ -67,6 +67,19 @@ static void drm_parse_config(void)
 		}
 	}
 	fclose(f);
+}
+
+static void drm_parse_config(void)
+{
+	char path[256];
+	/* global config first */
+	drm_parse_config_file("/etc/yaft-drm.conf");
+	/* user config overrides */
+	const char *home = getenv("HOME");
+	if (home) {
+		snprintf(path, sizeof(path), "%s/.yaft-drm.conf", home);
+		drm_parse_config_file(path);
+	}
 }
 
 static void drm_parse_args(int argc, char **argv)
@@ -87,6 +100,8 @@ static void drm_parse_args(int argc, char **argv)
 		} else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
 			drm_exec_cmd = argv[i + 1];
 			i++;
+		} else if (strcmp(argv[i], "--fallback") == 0) {
+			drm_fallback = 1;
 		} else if (strcmp(argv[i], "--mouse") == 0 && i + 1 < argc) {
 			if (strcmp(argv[i + 1], "evdev") == 0) drm_mouse_mode = 1;
 			else if (strcmp(argv[i + 1], "relative") == 0) drm_mouse_mode = 2;
@@ -534,7 +549,44 @@ int main(int argc, char **argv)
 	(void)argc; (void)argv;
 #endif
 
+#if defined(USE_DRM)
+	/* fallback: check if we're on a real VT console before trying DRM */
+	if (drm_fallback) {
+		int on_console = 0;
+		int ttyfd = open("/dev/tty", O_RDWR);
+		if (ttyfd >= 0) {
+			struct vt_stat vtstat;
+			if (ioctl(ttyfd, VT_GETSTATE, &vtstat) == 0)
+				on_console = 1;
+			close(ttyfd);
+		}
+		if (!on_console) {
+			extern const char *shell_cmd;
+			char *sh = getenv("SHELL");
+			if (!sh) sh = (char *)shell_cmd;
+			if (drm_exec_cmd)
+				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
+			else
+				execl(sh, sh, "--login", (char *)NULL);
+			perror("execl");
+			return EXIT_FAILURE;
+		}
+	}
+#endif
 	if (!fb_init(&fb)) {
+#if defined(USE_DRM)
+		if (drm_fallback) {
+			extern const char *shell_cmd;
+			char *sh = getenv("SHELL");
+			if (!sh) sh = (char *)shell_cmd;
+			if (drm_exec_cmd)
+				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
+			else
+				execl(sh, sh, "--login", (char *)NULL);
+			perror("execl");
+			return EXIT_FAILURE;
+		}
+#endif
 		logging(FATAL, "framebuffer initialize failed\n");
 		goto fb_init_failed;
 	}

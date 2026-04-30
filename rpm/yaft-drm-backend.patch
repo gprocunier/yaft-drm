@@ -611,8 +611,8 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	rm -f yaft yaft-drm yaft-drm-meslo yaft-drm-terminus yaftx mkfont_bdf glyph.h
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft-drm*' -N yaft-patch-base/yaft.c yaft-patch-mod/yaft.c
 --- yaft-patch-base/yaft.c	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/yaft.c	2026-04-30 08:57:45.289340454 -0400
-@@ -11,6 +11,334 @@
++++ yaft-patch-mod/yaft.c	2026-04-30 09:32:34.999526238 -0400
+@@ -11,6 +11,349 @@
  #include "ctrlseq/dcs.h"
  #include "parse.h"
  
@@ -627,6 +627,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +int drm_mouse_reporting = 0;
 +static const char *drm_exec_cmd = NULL;
 +static int drm_mouse_mode = 0; /* 0=auto, 1=evdev, 2=relative */
++static int drm_fallback = 0;
 +
 +static const uint16_t arrow_cursor[16] = {
 +	0xC000, 0xE000, 0xF000, 0xF800,
@@ -635,12 +636,9 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	0x0780, 0x0780, 0x03C0, 0x0000,
 +};
 +
-+static void drm_parse_config(void)
++static void drm_parse_config_file(const char *path)
 +{
-+	char path[256];
-+	const char *home = getenv("HOME");
-+	if (!home) return;
-+	snprintf(path, sizeof(path), "%s/.yaft-drm.conf", home);
++	static char cmd_buf[1024];
 +	struct stat cfg_st;
 +	if (stat(path, &cfg_st) != 0) return;
 +	if ((cfg_st.st_mode & S_IWOTH) || (cfg_st.st_uid != 0 && cfg_st.st_uid != getuid())) {
@@ -650,10 +648,8 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	FILE *f = fopen(path, "r");
 +	if (!f) return;
 +	char line[256];
-+	static char cmd_buf[1024];
 +	while (fgets(line, sizeof(line), f)) {
 +		if (line[0] == '#' || line[0] == '\n') continue;
-+		/* strip trailing newline */
 +		char *nl = strchr(line, '\n');
 +		if (nl) *nl = '\0';
 +
@@ -665,6 +661,10 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +			strncpy(cmd_buf, line + 8, sizeof(cmd_buf) - 1);
 +			cmd_buf[sizeof(cmd_buf) - 1] = '\0';
 +			drm_exec_cmd = cmd_buf;
++		} else if (strcmp(line, "fallback=true") == 0) {
++			drm_fallback = 1;
++		} else if (strcmp(line, "fallback=false") == 0) {
++			drm_fallback = 0;
 +		} else if (strncmp(line, "mouse=", 6) == 0) {
 +			if (strcmp(line + 6, "evdev") == 0) drm_mouse_mode = 1;
 +			else if (strcmp(line + 6, "relative") == 0) drm_mouse_mode = 2;
@@ -672,6 +672,19 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +		}
 +	}
 +	fclose(f);
++}
++
++static void drm_parse_config(void)
++{
++	char path[256];
++	/* global config first */
++	drm_parse_config_file("/etc/yaft-drm.conf");
++	/* user config overrides */
++	const char *home = getenv("HOME");
++	if (home) {
++		snprintf(path, sizeof(path), "%s/.yaft-drm.conf", home);
++		drm_parse_config_file(path);
++	}
 +}
 +
 +static void drm_parse_args(int argc, char **argv)
@@ -692,6 +705,8 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +		} else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
 +			drm_exec_cmd = argv[i + 1];
 +			i++;
++		} else if (strcmp(argv[i], "--fallback") == 0) {
++			drm_fallback = 1;
 +		} else if (strcmp(argv[i], "--mouse") == 0 && i + 1 < argc) {
 +			if (strcmp(argv[i + 1], "evdev") == 0) drm_mouse_mode = 1;
 +			else if (strcmp(argv[i + 1], "relative") == 0) drm_mouse_mode = 2;
@@ -947,7 +962,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  void sig_handler(int signo)
  {
  	sigset_t sigset;
-@@ -133,7 +461,27 @@
+@@ -133,7 +476,27 @@
  	if (pid < 0)
  		return false;
  	else if (pid == 0) { /* child */
@@ -975,7 +990,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  		if ((shell_env = getenv("SHELL")) != NULL)
  			eexecl(shell_env);
  		else
-@@ -146,15 +494,23 @@
+@@ -146,15 +509,23 @@
  
  int check_fds(fd_set *fds, struct timeval *tv, int input, int master)
  {
@@ -1001,7 +1016,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  {
  	uint8_t buf[BUFSIZE];
  	ssize_t size;
-@@ -171,11 +527,17 @@
+@@ -171,11 +542,54 @@
  	if (setlocale(LC_ALL, "") == NULL) /* for wcwidth() */
  		logging(WARN, "setlocale falied\n");
  
@@ -1012,7 +1027,44 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	(void)argc; (void)argv;
 +#endif
 +
++#if defined(USE_DRM)
++	/* fallback: check if we're on a real VT console before trying DRM */
++	if (drm_fallback) {
++		int on_console = 0;
++		int ttyfd = open("/dev/tty", O_RDWR);
++		if (ttyfd >= 0) {
++			struct vt_stat vtstat;
++			if (ioctl(ttyfd, VT_GETSTATE, &vtstat) == 0)
++				on_console = 1;
++			close(ttyfd);
++		}
++		if (!on_console) {
++			extern const char *shell_cmd;
++			char *sh = getenv("SHELL");
++			if (!sh) sh = (char *)shell_cmd;
++			if (drm_exec_cmd)
++				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
++			else
++				execl(sh, sh, "--login", (char *)NULL);
++			perror("execl");
++			return EXIT_FAILURE;
++		}
++	}
++#endif
  	if (!fb_init(&fb)) {
++#if defined(USE_DRM)
++		if (drm_fallback) {
++			extern const char *shell_cmd;
++			char *sh = getenv("SHELL");
++			if (!sh) sh = (char *)shell_cmd;
++			if (drm_exec_cmd)
++				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
++			else
++				execl(sh, sh, "--login", (char *)NULL);
++			perror("execl");
++			return EXIT_FAILURE;
++		}
++#endif
  		logging(FATAL, "framebuffer initialize failed\n");
  		goto fb_init_failed;
  	}
@@ -1020,7 +1072,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  	if (!term_init(&term, fb.info.width, fb.info.height)) {
  		logging(FATAL, "terminal initialize failed\n");
  		goto term_init_failed;
-@@ -193,38 +555,104 @@
+@@ -193,38 +607,104 @@
  	}
  	child_alive = true;
  
