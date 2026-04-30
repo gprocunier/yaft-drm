@@ -94,7 +94,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  void set_mode(struct terminal_t *term, struct parm_t *parm)
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft-drm*' -N yaft-patch-base/fb/common.h yaft-patch-mod/fb/common.h
 --- yaft-patch-base/fb/common.h	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/fb/common.h	2026-04-29 17:37:28.847295732 -0400
++++ yaft-patch-mod/fb/common.h	2026-04-30 08:56:54.478378547 -0400
 @@ -29,7 +29,9 @@
  };
  
@@ -166,7 +166,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +
 +	/* force fbcon to retake the display */
 +	{
-+		int tfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
++		int tfd = open("/dev/tty0", O_RDWR);
 +		if (tfd >= 0) {
 +			ioctl(tfd, KDSETMODE, KD_TEXT);
 +			close(tfd);
@@ -174,7 +174,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +		int cur_vt = 0;
 +		FILE *f = fopen("/sys/class/tty/tty0/active", "r");
 +		if (f) { fscanf(f, "tty%d", &cur_vt); fclose(f); }
-+		tfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
++		tfd = open("/dev/tty0", O_RDWR);
 +		if (tfd >= 0 && cur_vt > 0) {
 +			int other = (cur_vt == 1) ? 2 : 1;
 +			ioctl(tfd, VT_ACTIVATE, other);
@@ -236,12 +236,11 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  }
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft-drm*' -N yaft-patch-base/fb/drm.h yaft-patch-mod/fb/drm.h
 --- yaft-patch-base/fb/drm.h	1969-12-31 19:00:00.000000000 -0500
-+++ yaft-patch-mod/fb/drm.h	2026-04-29 17:37:53.193186895 -0400
++++ yaft-patch-mod/fb/drm.h	2026-04-30 08:56:47.252099526 -0400
 @@ -0,0 +1,283 @@
 +/* See LICENSE for licence details. */
 +/* DRM/KMS backend for modern kernels without CONFIG_FB_DEVICE */
 +#include <errno.h>
-+#include <fcntl.h>
 +#include <xf86drm.h>
 +#include <xf86drmMode.h>
 +#include <linux/vt.h>
@@ -317,7 +316,8 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +		if (strncmp(ent->d_name, "card", 4) != 0)
 +			continue;
 +		snprintf(path, sizeof(path), "/dev/dri/%s", ent->d_name);
-+		fd = open(path, O_RDWR | O_CLOEXEC);
++		fd = open(path, O_RDWR);
++			if (fd >= 0) fcntl(fd, F_SETFD, FD_CLOEXEC);
 +		if (fd < 0)
 +			continue;
 +		res = drmModeGetResources(fd);
@@ -496,7 +496,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +
 +	/* unbind fbcon from this VT so we can take over the CRTC */
 +	{
-+		int ttyfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
++		int ttyfd = open("/dev/tty0", O_RDWR);
 +		if (ttyfd >= 0) {
 +			ioctl(ttyfd, KDSETMODE, KD_GRAPHICS);
 +			close(ttyfd);
@@ -611,8 +611,8 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	rm -f yaft yaft-drm yaft-drm-meslo yaft-drm-terminus yaftx mkfont_bdf glyph.h
 diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft-drm*' -N yaft-patch-base/yaft.c yaft-patch-mod/yaft.c
 --- yaft-patch-base/yaft.c	2015-07-26 22:36:45.000000000 -0400
-+++ yaft-patch-mod/yaft.c	2026-04-29 17:35:24.833756327 -0400
-@@ -11,6 +11,332 @@
++++ yaft-patch-mod/yaft.c	2026-04-30 08:57:45.289340454 -0400
+@@ -11,6 +11,334 @@
  #include "ctrlseq/dcs.h"
  #include "parse.h"
  
@@ -720,7 +720,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +
 +	for (int n = 0; n < 32; n++) {
 +		snprintf(path, sizeof(path), "/dev/input/event%d", n);
-+		int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
++		int fd = open(path, O_RDONLY | O_NONBLOCK);
 +		if (fd < 0) continue;
 +		unsigned long evbits = 0, absbits = 0;
 +		ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), &evbits);
@@ -731,6 +731,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +				ioctl(fd, EVIOCGNAME(sizeof(name)), name);
 +				for (const char **d = bmc_names; *d; d++) {
 +					if (strstr(name, *d)) {
++						fcntl(fd, F_SETFD, FD_CLOEXEC);
 +						fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
 +						return fd;
 +					}
@@ -773,8 +774,9 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
 +	}
 +
 +	/* PS/2 /dev/input/mice */
-+	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
++	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK);
 +	if (drm_mouse_fd >= 0) {
++		fcntl(drm_mouse_fd, F_SETFD, FD_CLOEXEC);
 +		drm_mouse_abs = 0;
 +		if (VERBOSE)
 +			fprintf(stderr, "MOUSE: PS/2 relative fd=%d\n", drm_mouse_fd);
@@ -945,7 +947,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  void sig_handler(int signo)
  {
  	sigset_t sigset;
-@@ -133,7 +459,27 @@
+@@ -133,7 +461,27 @@
  	if (pid < 0)
  		return false;
  	else if (pid == 0) { /* child */
@@ -973,7 +975,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  		if ((shell_env = getenv("SHELL")) != NULL)
  			eexecl(shell_env);
  		else
-@@ -146,15 +492,23 @@
+@@ -146,15 +494,23 @@
  
  int check_fds(fd_set *fds, struct timeval *tv, int input, int master)
  {
@@ -999,7 +1001,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  {
  	uint8_t buf[BUFSIZE];
  	ssize_t size;
-@@ -171,11 +525,17 @@
+@@ -171,11 +527,17 @@
  	if (setlocale(LC_ALL, "") == NULL) /* for wcwidth() */
  		logging(WARN, "setlocale falied\n");
  
@@ -1018,7 +1020,7 @@ diff -ruN -x glyph.h -x glyph_meslo.h -x glyph_terminus.h -x mkfont_bdf -x 'yaft
  	if (!term_init(&term, fb.info.width, fb.info.height)) {
  		logging(FATAL, "terminal initialize failed\n");
  		goto term_init_failed;
-@@ -193,38 +553,104 @@
+@@ -193,38 +555,104 @@
  	}
  	child_alive = true;
  

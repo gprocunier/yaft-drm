@@ -1,7 +1,6 @@
 /* See LICENSE for licence details. */
 /* DRM/KMS backend for modern kernels without CONFIG_FB_DEVICE */
 #include <errno.h>
-#include <fcntl.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <linux/vt.h>
@@ -77,7 +76,8 @@ static int drm_open_card(void)
 		if (strncmp(ent->d_name, "card", 4) != 0)
 			continue;
 		snprintf(path, sizeof(path), "/dev/dri/%s", ent->d_name);
-		fd = open(path, O_RDWR | O_CLOEXEC);
+		fd = open(path, O_RDWR);
+			if (fd >= 0) fcntl(fd, F_SETFD, FD_CLOEXEC);
 		if (fd < 0)
 			continue;
 		res = drmModeGetResources(fd);
@@ -256,7 +256,7 @@ bool set_fbinfo(int fd, struct fb_info_t *info)
 
 	/* unbind fbcon from this VT so we can take over the CRTC */
 	{
-		int ttyfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
+		int ttyfd = open("/dev/tty0", O_RDWR);
 		if (ttyfd >= 0) {
 			ioctl(ttyfd, KDSETMODE, KD_GRAPHICS);
 			close(ttyfd);

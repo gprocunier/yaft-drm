@@ -115,7 +115,7 @@ static int drm_find_evdev_abs(void)
 
 	for (int n = 0; n < 32; n++) {
 		snprintf(path, sizeof(path), "/dev/input/event%d", n);
-		int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
 		unsigned long evbits = 0, absbits = 0;
 		ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), &evbits);
@@ -126,6 +126,7 @@ static int drm_find_evdev_abs(void)
 				ioctl(fd, EVIOCGNAME(sizeof(name)), name);
 				for (const char **d = bmc_names; *d; d++) {
 					if (strstr(name, *d)) {
+						fcntl(fd, F_SETFD, FD_CLOEXEC);
 						fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
 						return fd;
 					}
@@ -168,8 +169,9 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 	}
 
 	/* PS/2 /dev/input/mice */
-	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK);
 	if (drm_mouse_fd >= 0) {
+		fcntl(drm_mouse_fd, F_SETFD, FD_CLOEXEC);
 		drm_mouse_abs = 0;
 		if (VERBOSE)
 			fprintf(stderr, "MOUSE: PS/2 relative fd=%d\n", drm_mouse_fd);

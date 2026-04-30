@@ -389,7 +389,7 @@ void fb_die(struct framebuffer_t *fb)
 
 	/* force fbcon to retake the display */
 	{
-		int tfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
+		int tfd = open("/dev/tty0", O_RDWR);
 		if (tfd >= 0) {
 			ioctl(tfd, KDSETMODE, KD_TEXT);
 			close(tfd);
@@ -397,7 +397,7 @@ void fb_die(struct framebuffer_t *fb)
 		int cur_vt = 0;
 		FILE *f = fopen("/sys/class/tty/tty0/active", "r");
 		if (f) { fscanf(f, "tty%d", &cur_vt); fclose(f); }
-		tfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
+		tfd = open("/dev/tty0", O_RDWR);
 		if (tfd >= 0 && cur_vt > 0) {
 			int other = (cur_vt == 1) ? 2 : 1;
 			ioctl(tfd, VT_ACTIVATE, other);

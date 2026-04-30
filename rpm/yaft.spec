@@ -41,7 +41,7 @@ export CFLAGS="%{optflags}"
 
 # Build DRM Terminus variant (default)
 cp %{SOURCE2} glyph.h
-cc -o yaft-drm yaft.c %{optflags} -D_GNU_SOURCE -DUSE_DRM $(pkg-config --cflags libdrm) $(pkg-config --libs libdrm)
+cc -o yaft-drm yaft.c %{optflags} -DUSE_DRM $(pkg-config --cflags libdrm) $(pkg-config --libs libdrm)
 
 # Build DRM Meslo variant
 cp %{SOURCE1} glyph.h
