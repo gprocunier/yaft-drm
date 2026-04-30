@@ -1,6 +1,6 @@
 Name:           yaft
 Version:        0.2.9
-Release:        10%{?dist}
+Release:        11%{?dist}
 Summary:        Yet another framebuffer terminal with Sixel graphics support
 License:        MIT
 URL:            https://github.com/uobikiemukot/yaft
@@ -63,6 +63,13 @@ install -m755 yaft-drm-meslo %{buildroot}%{_bindir}/yaft-drm-meslo
 %{_datadir}/terminfo/y/yaft*
 
 %changelog
+* Wed Apr 30 2026 Greg Procunier - 0.2.9-11
+- Security: drop root privileges in child shell via SUDO_UID/SUDO_GID
+- Security: config file ownership and permission validation
+- Security: O_CLOEXEC on all DRM, input, and tty file descriptors
+- Security: clamp evdev abs_max to prevent division by zero
+- Security: minimal async-signal-safe crash handler
+
 * Tue Apr 29 2026 Greg Procunier - 0.2.9-10
 - Restore blink counter pacing for consistent frame timing
 - Idle 0% CPU, cockpit /system 19-21% on iDRAC Matrox G200eR2

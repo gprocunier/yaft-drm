@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/vt.h>
+#include <sys/stat.h>
 
 int drm_req_width = 0, drm_req_height = 0;
 int drm_cursor_blink = 1;
@@ -35,6 +36,12 @@ static void drm_parse_config(void)
 	const char *home = getenv("HOME");
 	if (!home) return;
 	snprintf(path, sizeof(path), "%s/.yaft-drm.conf", home);
+	struct stat cfg_st;
+	if (stat(path, &cfg_st) != 0) return;
+	if ((cfg_st.st_mode & S_IWOTH) || (cfg_st.st_uid != 0 && cfg_st.st_uid != getuid())) {
+		fprintf(stderr, "yaft-drm: ignoring %s (not owned by root or current user, or world-writable)\n", path);
+		return;
+	}
 	FILE *f = fopen(path, "r");
 	if (!f) return;
 	char line[256];
@@ -108,7 +115,7 @@ static int drm_find_evdev_abs(void)
 
 	for (int n = 0; n < 32; n++) {
 		snprintf(path, sizeof(path), "/dev/input/event%d", n);
-		int fd = open(path, O_RDONLY | O_NONBLOCK);
+		int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 		if (fd < 0) continue;
 		unsigned long evbits = 0, absbits = 0;
 		ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), &evbits);
@@ -146,9 +153,9 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 			drm_mouse_abs = 1;
 			struct input_absinfo absinfo;
 			if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_X), &absinfo) == 0)
-				drm_mouse_abs_max_x = absinfo.maximum;
+				drm_mouse_abs_max_x = absinfo.maximum > 0 ? absinfo.maximum : 1;
 			if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_Y), &absinfo) == 0)
-				drm_mouse_abs_max_y = absinfo.maximum;
+				drm_mouse_abs_max_y = absinfo.maximum > 0 ? absinfo.maximum : 1;
 			if (VERBOSE)
 				fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
 					drm_mouse_fd, drm_mouse_abs_max_x, drm_mouse_abs_max_y);
@@ -161,7 +168,7 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 	}
 
 	/* PS/2 /dev/input/mice */
-	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK);
+	drm_mouse_fd = open("/dev/input/mice", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 	if (drm_mouse_fd >= 0) {
 		drm_mouse_abs = 0;
 		if (VERBOSE)
@@ -452,6 +459,17 @@ bool fork_and_exec(int *master, int lines, int cols)
 	if (pid < 0)
 		return false;
 	else if (pid == 0) { /* child */
+		/* drop root privileges if launched via sudo */
+		{
+			const char *suid = getenv("SUDO_UID");
+			const char *sgid = getenv("SUDO_GID");
+			if (suid && sgid) {
+				gid_t gid = (gid_t)atoi(sgid);
+				uid_t uid = (uid_t)atoi(suid);
+				if (gid > 0) setgid(gid);
+				if (uid > 0) setuid(uid);
+			}
+		}
 		esetenv("TERM", term_name, 1);
 #if defined(USE_DRM)
 		if (drm_exec_cmd) {

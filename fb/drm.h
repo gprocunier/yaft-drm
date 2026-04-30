@@ -1,6 +1,7 @@
 /* See LICENSE for licence details. */
 /* DRM/KMS backend for modern kernels without CONFIG_FB_DEVICE */
 #include <errno.h>
+#include <fcntl.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #include <linux/vt.h>
@@ -76,7 +77,7 @@ static int drm_open_card(void)
 		if (strncmp(ent->d_name, "card", 4) != 0)
 			continue;
 		snprintf(path, sizeof(path), "/dev/dri/%s", ent->d_name);
-		fd = open(path, O_RDWR);
+		fd = open(path, O_RDWR | O_CLOEXEC);
 		if (fd < 0)
 			continue;
 		res = drmModeGetResources(fd);
@@ -104,11 +105,6 @@ static int drm_open_card(void)
 static void drm_crash_handler(int signo)
 {
 	ioctl(STDIN_FILENO, KDSETMODE, KD_TEXT);
-	struct vt_mode vtm;
-	vtm.mode = VT_AUTO;
-	vtm.waitv = 0;
-	vtm.relsig = vtm.acqsig = vtm.frsig = 0;
-	ioctl(STDIN_FILENO, VT_SETMODE, &vtm);
 	signal(signo, SIG_DFL);
 	raise(signo);
 }
@@ -260,7 +256,7 @@ bool set_fbinfo(int fd, struct fb_info_t *info)
 
 	/* unbind fbcon from this VT so we can take over the CRTC */
 	{
-		int ttyfd = open("/dev/tty0", O_RDWR);
+		int ttyfd = open("/dev/tty0", O_RDWR | O_CLOEXEC);
 		if (ttyfd >= 0) {
 			ioctl(ttyfd, KDSETMODE, KD_GRAPHICS);
 			close(ttyfd);

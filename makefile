@@ -7,7 +7,7 @@ LDFLAGS ?=
 XCFLAGS  ?= -std=c99 -pedantic -Wall -Wextra -I/usr/include/X11/ -O3 -s -pipe
 XLDFLAGS ?= -lX11
 
-DRMCFLAGS  ?= -std=c99 -pedantic -Wall -Wextra -O3 -s -pipe -DUSE_DRM $(shell pkg-config --cflags libdrm)
+DRMCFLAGS  ?= -std=c99 -D_GNU_SOURCE -pedantic -Wall -Wextra -O3 -s -pipe -DUSE_DRM $(shell pkg-config --cflags libdrm)
 DRMLDFLAGS ?= $(shell pkg-config --libs libdrm)
 
 HDR = glyph.h yaft.h conf.h color.h parse.h terminal.h util.h \
