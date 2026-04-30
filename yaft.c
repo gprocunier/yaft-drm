@@ -605,9 +605,6 @@ int main(int argc, char **argv)
 	drm_parse_config();
 	drm_parse_args(argc, argv);
 
-#else
-	(void)argc; (void)argv;
-
 	if (drm_fallback) {
 		int on_console = 0;
 		int ttyfd = open("/dev/tty", O_RDWR);
@@ -626,6 +623,8 @@ int main(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 	}
+#else
+	(void)argc; (void)argv;
 #endif
 
 	if (!fb_init(&fb)) {
