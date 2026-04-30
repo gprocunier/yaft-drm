@@ -602,6 +602,15 @@ int main()
 
 	if (!fb_init(&fb)) {
 		logging(FATAL, "framebuffer initialize failed\n");
+#if defined(USE_DRM)
+		if (drm_fallback) {
+			extern const char *shell_cmd;
+			char *sh = getenv("SHELL");
+			if (!sh || strstr(sh, "yaft")) sh = (char *)shell_cmd;
+			execl(sh, sh, "--login", (char *)NULL);
+			perror("execl");
+		}
+#endif
 		goto fb_init_failed;
 	}
 
