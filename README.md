@@ -119,6 +119,78 @@ mouse=auto
 
 Command-line arguments override config file settings.
 
+## System Integration
+
+### Fallback Mode
+
+yaft-drm can detect whether it is running on a real VT console or over SSH/serial. With `--fallback`, it launches normally on a console and falls through to a login shell elsewhere.
+
+```bash
+sudo yaft-drm --fallback --res 1920x1080
+```
+
+Or in `/etc/yaft-drm.conf`:
+
+```ini
+fallback=true
+resolution=1920x1080
+```
+
+This makes it safe to invoke yaft-drm from login profiles or systemd services — it will never take over DRM from an SSH session.
+
+### Automatic Console Login with systemd
+
+Replace `agetty` on a specific TTY with yaft-drm:
+
+```ini
+# /etc/systemd/system/yaft-drm@.service
+[Unit]
+Description=yaft-drm console on %I
+After=systemd-logind.service
+Conflicts=getty@%i.service
+
+[Service]
+ExecStart=/usr/bin/yaft-drm --fallback --res 1920x1080
+StandardInput=tty
+TTYPath=/dev/%I
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=getty.target
+```
+
+Enable for TTY1:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl disable getty@tty1
+sudo systemctl enable yaft-drm@tty1
+sudo systemctl start yaft-drm@tty1
+```
+
+Other TTYs remain normal `agetty` sessions. If yaft-drm crashes, systemd restarts it.
+
+### Profile Script Fallback
+
+Add to `/etc/profile.d/yaft-drm.sh` for automatic launch on console login:
+
+```bash
+if [ "\$(tty)" = "/dev/tty1" ] && [ -z "\$DISPLAY" ] && [ -z "\$WAYLAND_DISPLAY" ]; then
+    exec sudo yaft-drm --fallback
+fi
+```
+
+Falls through to a normal shell on SSH, serial, or graphical sessions.
+
+### Configuration Hierarchy
+
+1. `/etc/yaft-drm.conf` — system-wide defaults (set by admin)
+2. `~/.yaft-drm.conf` — per-user overrides
+3. Command-line arguments — final override
+
 ## Tested Hardware
 
 | Platform | Display Adapter | Mouse Input | Status |
