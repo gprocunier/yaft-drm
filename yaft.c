@@ -18,7 +18,9 @@
 #include <sys/stat.h>
 
 int drm_req_width = 0, drm_req_height = 0;
+#if defined(USE_DRM)
 int drm_cursor_blink = 1;
+#endif
 int drm_mouse_reporting = 0;
 static const char *drm_exec_cmd = NULL;
 static int drm_mouse_mode = 0; /* 0=auto, 1=evdev, 2=relative */
@@ -624,8 +626,11 @@ int main()
 	child_alive = true;
 
 	/* main loop */
+#if defined(USE_DRM)
 	int blink_counter = 0;
+#endif
 	while (child_alive) {
+#if defined(USE_DRM)
 		blink_counter++;
 		if (blink_counter >= 33) { /* ~500ms at 15ms select timeout */
 			blink_counter = 0;
@@ -635,6 +640,7 @@ int main()
 				refresh(&fb, &term);
 			}
 		}
+#endif
 		if (need_redraw) {
 			need_redraw = false;
 			cmap_update(fb.fd, fb.cmap); /* after VT switching, need to restore cmap (in 8bpp mode) */
