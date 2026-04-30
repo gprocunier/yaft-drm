@@ -126,7 +126,7 @@ static int drm_find_evdev_abs(void)
 {
 	char path[64];
 	char name[256];
-	const char *bmc_names[] = { "Avocent", "IPMI", "iLO", "AMI", "ATEN", NULL };
+	const char *bmc_names[] = { "Avocent", "IPMI", "iLO", "AMI", "ATEN", "QEMU", "VMware", NULL };
 
 	for (int n = 0; n < 32; n++) {
 		snprintf(path, sizeof(path), "/dev/input/event%d", n);
@@ -206,33 +206,85 @@ static void drm_mouse_die(void)
 
 static int cursor_vis_x = -1, cursor_vis_y = -1;
 
-static void drm_draw_cursor(struct framebuffer_t *fb, int px, int py, uint32_t color)
+static uint32_t cursor_saved[16 * 16];
+static int cursor_drawn_x = -1, cursor_drawn_y = -1;
+static int cursor_saved_w = 0, cursor_saved_h = 0;
+
+static void drm_save_under_cursor(struct framebuffer_t *fb, int px, int py)
+{
+	int bpp = fb->info.bytes_per_pixel;
+	cursor_saved_w = 0;
+	cursor_saved_h = 0;
+	for (int h = 0; h < 16 && (py + h) < fb->info.height; h++) {
+		for (int w = 0; w < 16 && (px + w) < fb->info.width; w++) {
+			int off = (py + h) * fb->info.line_length + (px + w) * bpp;
+			if (off >= 0 && off + bpp <= fb->info.screen_size)
+				memcpy(&cursor_saved[h * 16 + w], fb->fp + off, bpp);
+			if (h == 0) cursor_saved_w = w + 1;
+		}
+		cursor_saved_h = h + 1;
+	}
+}
+
+static void drm_restore_under_cursor(struct framebuffer_t *fb, int px, int py)
+{
+	int bpp = fb->info.bytes_per_pixel;
+	for (int h = 0; h < cursor_saved_h; h++) {
+		for (int w = 0; w < cursor_saved_w; w++) {
+			int off = (py + h) * fb->info.line_length + (px + w) * bpp;
+			if (off >= 0 && off + bpp <= fb->info.screen_size)
+				memcpy(fb->fp + off, &cursor_saved[h * 16 + w], bpp);
+		}
+	}
+}
+
+static uint32_t drm_cursor_color(struct framebuffer_t *fb, int px, int py)
+{
+	int bpp = fb->info.bytes_per_pixel;
+	int cx = px + 1, cy = py + 1;
+	if (cx >= fb->info.width) cx = px;
+	if (cy >= fb->info.height) cy = py;
+	int off = cy * fb->info.line_length + cx * bpp;
+	if (off < 0 || off + bpp > fb->info.screen_size)
+		return 0x00FF00FF;
+	uint32_t pixel = 0;
+	memcpy(&pixel, fb->fp + off, bpp);
+	int r = (pixel >> 16) & 0xFF;
+	int g = (pixel >> 8) & 0xFF;
+	int b = pixel & 0xFF;
+	int luma = (r * 299 + g * 587 + b * 114) / 1000;
+	return (luma > 128) ? 0x00000000 : 0x00FFFFFF;
+}
+
+static void drm_draw_cursor(struct framebuffer_t *fb, int px, int py)
 {
 	if (px < 0 || py < 0) return;
 	int bpp = fb->info.bytes_per_pixel;
-
+	uint32_t fill = drm_cursor_color(fb, px, py);
+	uint32_t outline = fill ^ 0x00FFFFFF;
 	for (int h = 0; h < 16 && (py + h) < fb->info.height; h++) {
 		uint16_t row = arrow_cursor[h];
 		for (int w = 0; w < 16 && (px + w) < fb->info.width; w++) {
 			if (row & (0x8000 >> w)) {
 				int off = (py + h) * fb->info.line_length + (px + w) * bpp;
 				if (off >= 0 && off + bpp <= fb->info.screen_size) {
-					uint32_t existing;
-					memcpy(&existing, fb->fp + off, bpp);
-					uint32_t xored = existing ^ color;
-					memcpy(fb->fp + off, &xored, bpp);
+					int edge = 0;
+					if (w == 0 || !(row & (0x8000 >> (w - 1)))) edge = 1;
+					else if (w == 15 || !(row & (0x8000 >> (w + 1)))) edge = 1;
+					else if (h == 0 || !(arrow_cursor[h - 1] & (0x8000 >> w))) edge = 1;
+					else if (h == 15 || !(arrow_cursor[h + 1] & (0x8000 >> w))) edge = 1;
+					uint32_t color = edge ? outline : fill;
+					memcpy(fb->fp + off, &color, bpp);
 				}
 			}
 		}
 	}
 }
 
-static int cursor_drawn_x = -1, cursor_drawn_y = -1;
-
 static void drm_erase_cursor(struct framebuffer_t *fb)
 {
 	if (cursor_drawn_x >= 0) {
-		drm_draw_cursor(fb, cursor_drawn_x, cursor_drawn_y, 0x00FF00FF);
+		drm_restore_under_cursor(fb, cursor_drawn_x, cursor_drawn_y);
 		cursor_drawn_x = cursor_drawn_y = -1;
 	}
 }
@@ -240,7 +292,8 @@ static void drm_erase_cursor(struct framebuffer_t *fb)
 static void drm_overlay_cursor(struct framebuffer_t *fb)
 {
 	if (drm_mouse_fd < 0) return;
-	drm_draw_cursor(fb, drm_mouse_x, drm_mouse_y, 0x00FF00FF);
+	drm_save_under_cursor(fb, drm_mouse_x, drm_mouse_y);
+	drm_draw_cursor(fb, drm_mouse_x, drm_mouse_y);
 	cursor_drawn_x = drm_mouse_x;
 	cursor_drawn_y = drm_mouse_y;
 }
@@ -491,16 +544,18 @@ bool fork_and_exec(int *master, int lines, int cols)
 #if defined(USE_DRM)
 		if (drm_exec_cmd) {
 			char *sh = getenv("SHELL");
-			if (!sh) sh = (char *)shell_cmd;
+			if (!sh || strstr(sh, "yaft")) sh = (char *)shell_cmd;
 			execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
 			perror("execl");
 			exit(EXIT_FAILURE);
 		}
 #endif
-		if ((shell_env = getenv("SHELL")) != NULL)
-			eexecl(shell_env);
-		else
-			eexecl(shell_cmd);
+		if ((shell_env = getenv("SHELL")) != NULL && !strstr(shell_env, "yaft"))
+			execl(shell_env, shell_env, "--login", (char *)NULL);
+		else {
+			extern const char *shell_cmd;
+			execl(shell_cmd, shell_cmd, "--login", (char *)NULL);
+		}
 		/* never reach here */
 		exit(EXIT_FAILURE);
 	}
@@ -525,7 +580,7 @@ int check_fds(fd_set *fds, struct timeval *tv, int input, int master)
 	return eselect(maxfd + 1, fds, NULL, NULL, tv);
 }
 
-int main(int argc, char **argv)
+int main()
 {
 	uint8_t buf[BUFSIZE];
 	ssize_t size;
@@ -539,57 +594,15 @@ int main(int argc, char **argv)
 	extern struct termios termios_orig;
 
 	/* init */
+	if (!getenv("LANG") && !getenv("LC_ALL")) setenv("LANG", "C.UTF-8", 0);
 	if (setlocale(LC_ALL, "") == NULL) /* for wcwidth() */
 		logging(WARN, "setlocale falied\n");
 
-#if defined(USE_DRM)
-	drm_parse_config();
-	drm_parse_args(argc, argv);
-#else
-	(void)argc; (void)argv;
-#endif
-
-#if defined(USE_DRM)
-	/* fallback: check if we're on a real VT console before trying DRM */
-	if (drm_fallback) {
-		int on_console = 0;
-		int ttyfd = open("/dev/tty", O_RDWR);
-		if (ttyfd >= 0) {
-			struct vt_stat vtstat;
-			if (ioctl(ttyfd, VT_GETSTATE, &vtstat) == 0)
-				on_console = 1;
-			close(ttyfd);
-		}
-		if (!on_console) {
-			extern const char *shell_cmd;
-			char *sh = getenv("SHELL");
-			if (!sh) sh = (char *)shell_cmd;
-			if (drm_exec_cmd)
-				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
-			else
-				execl(sh, sh, "--login", (char *)NULL);
-			perror("execl");
-			return EXIT_FAILURE;
-		}
-	}
-#endif
 	if (!fb_init(&fb)) {
-#if defined(USE_DRM)
-		if (drm_fallback) {
-			extern const char *shell_cmd;
-			char *sh = getenv("SHELL");
-			if (!sh) sh = (char *)shell_cmd;
-			if (drm_exec_cmd)
-				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
-			else
-				execl(sh, sh, "--login", (char *)NULL);
-			perror("execl");
-			return EXIT_FAILURE;
-		}
-#endif
 		logging(FATAL, "framebuffer initialize failed\n");
 		goto fb_init_failed;
 	}
+
 	if (!term_init(&term, fb.info.width, fb.info.height)) {
 		logging(FATAL, "terminal initialize failed\n");
 		goto term_init_failed;
@@ -605,106 +618,61 @@ int main(int argc, char **argv)
 		logging(FATAL, "forkpty failed\n");
 		goto tty_init_failed;
 	}
-	child_alive = true;
-
 #if defined(USE_DRM)
 	drm_mouse_init(fb.info.width, fb.info.height, term.cols, term.lines);
 #endif
-
-#if defined(USE_DRM)
-	int blink_counter = 0;
-	int blink_visible = 1;
-	int lazy_pending = 0;
-#endif
+	child_alive = true;
 
 	/* main loop */
+	int blink_counter = 0;
 	while (child_alive) {
+		blink_counter++;
+		if (blink_counter >= 33) { /* ~500ms at 15ms select timeout */
+			blink_counter = 0;
+			drm_cursor_blink = !drm_cursor_blink;
+			if (term.mode & MODE_CURSOR) {
+				term.line_dirty[term.cursor.y] = true;
+				refresh(&fb, &term);
+			}
+		}
 		if (need_redraw) {
 			need_redraw = false;
-			cmap_update(fb.fd, fb.cmap);
+			cmap_update(fb.fd, fb.cmap); /* after VT switching, need to restore cmap (in 8bpp mode) */
 			redraw(&term);
-#if defined(USE_DRM)
-			drm_erase_cursor(&fb);
-#endif
 			refresh(&fb, &term);
-#if defined(USE_DRM)
-			drm_overlay_cursor(&fb);
-#endif
 		}
 
 		if (check_fds(&fds, &tv, STDIN_FILENO, term.fd) == -1)
 			continue;
 
-#if defined(USE_DRM)
-		blink_counter++;
-		if (blink_counter >= 33) {
-			blink_counter = 0;
-			blink_visible = !blink_visible;
-			drm_cursor_blink = blink_visible;
-			term.line_dirty[term.cursor.y] = true;
-			drm_erase_cursor(&fb);
-			refresh(&fb, &term);
-			drm_overlay_cursor(&fb);
-		}
-#endif
-
 		if (FD_ISSET(STDIN_FILENO, &fds)) {
 			if ((size = read(STDIN_FILENO, buf, BUFSIZE)) > 0)
 				ewrite(term.fd, buf, size);
+		}
+		if (FD_ISSET(term.fd, &fds)) {
+			if ((size = read(term.fd, buf, BUFSIZE)) > 0) {
+				if (VERBOSE)
+					ewrite(STDOUT_FILENO, buf, size);
+				parse(&term, buf, size);
+				if (LAZY_DRAW && size == BUFSIZE)
+					continue; /* maybe more data arrives soon */
+				refresh(&fb, &term);
+			}
 		}
 #if defined(USE_DRM)
 		if (drm_mouse_fd >= 0 && FD_ISSET(drm_mouse_fd, &fds)) {
 			drm_erase_cursor(&fb);
 			drm_mouse_handle(term.fd, &fb);
 			drm_overlay_cursor(&fb);
-			{
-				drmModeClip clip = { 0, 0, fb.info.width, fb.info.height };
-				drmModeDirtyFB(fb.fd, drm_state.fb_id, &clip, 1);
-			}
+			refresh(&fb, &term);
 		}
 #endif
-		if (FD_ISSET(term.fd, &fds)) {
-			if ((size = read(term.fd, buf, BUFSIZE)) > 0) {
-				if (VERBOSE)
-					ewrite(STDOUT_FILENO, buf, size);
-#if defined(USE_DRM)
-				/* detect xterm mouse reporting enable/disable
-				   watch for ?1000h ?1002h ?1003h ?1006h and their 'l' counterparts */
-				for (ssize_t s = 0; s + 7 < size; s++) {
-					if (buf[s] == '\033' && buf[s+1] == '[' && buf[s+2] == '?'
-					    && buf[s+3] == '1' && buf[s+4] == '0' && buf[s+5] == '0') {
-						if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3' || buf[s+6] == '6') && buf[s+7] == 'h')
-							drm_mouse_reporting = 1;
-						else if ((buf[s+6] == '0' || buf[s+6] == '2' || buf[s+6] == '3') && buf[s+7] == 'l')
-							drm_mouse_reporting = 0;
-					}
-				}
-#endif
-				parse(&term, buf, size);
-				if (LAZY_DRAW && size == BUFSIZE) {
-#if defined(USE_DRM)
-					lazy_pending = 1;
-#endif
-					continue;
-				}
-#if defined(USE_DRM)
-				drm_erase_cursor(&fb);
-#endif
-				refresh(&fb, &term);
-#if defined(USE_DRM)
-				drm_overlay_cursor(&fb);
-#endif
-			}
-		}
 	}
 
 	/* normal exit */
-#if defined(USE_DRM)
-	drm_mouse_die();
-#endif
-	fb_die(&fb);
 	tty_die(&termios_orig);
 	term_die(&term);
+	fb_die(&fb);
 	return EXIT_SUCCESS;
 
 	/* error exit */

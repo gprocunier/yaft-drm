@@ -337,6 +337,12 @@ void set_mode(struct terminal_t *term, struct parm_t *parm)
 		} else if (mode == 25) {
 			term->mode |= MODE_CURSOR;
 		}
+#if defined(USE_DRM)
+		else if (mode == 1000 || mode == 1002 || mode == 1006) {
+			extern int drm_mouse_reporting;
+			drm_mouse_reporting = 1;
+		}
+#endif
 	}
 
 }
@@ -359,6 +365,12 @@ void reset_mode(struct terminal_t *term, struct parm_t *parm)
 		} else if (mode == 25) {
 			term->mode &= ~MODE_CURSOR;
 		}
+#if defined(USE_DRM)
+		else if (mode == 1000 || mode == 1002 || mode == 1006) {
+			extern int drm_mouse_reporting;
+			drm_mouse_reporting = 0;
+		}
+#endif
 	}
 
 }
