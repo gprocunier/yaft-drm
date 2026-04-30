@@ -219,6 +219,7 @@ See the [calabi-shell](https://github.com/gprocunier/calabi-shell) repository fo
 |---|---|---|---|
 | Dell PowerEdge (iDRAC 8) | Matrox G200eR2 | Avocent USB (evdev absolute) | Validated |
 | Pi-KVM (Raspberry Pi 4 Model B) | USB HDMI capture | Pi-KVM HID (evdev absolute) | Validated |
+| JetKVM | USB HDMI capture | JetKVM HID (evdev absolute) | Validated |
 | KVM/QEMU (Cockpit noVNC) | QXL / Virtio VGA | QEMU USB Tablet / VMware VMMouse (evdev absolute) | Validated |
 
 ### Performance (iDRAC 8, Matrox G200eR2, 1440x900)
