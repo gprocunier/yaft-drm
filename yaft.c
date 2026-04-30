@@ -85,6 +85,7 @@ static void drm_parse_config(void)
 }
 
 static void drm_parse_args(int argc, char **argv)
+
 {
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--res") == 0 && i + 1 < argc) {
@@ -582,7 +583,7 @@ int check_fds(fd_set *fds, struct timeval *tv, int input, int master)
 	return eselect(maxfd + 1, fds, NULL, NULL, tv);
 }
 
-int main()
+int main(int argc, char **argv)
 {
 	uint8_t buf[BUFSIZE];
 	ssize_t size;
@@ -603,6 +604,9 @@ int main()
 #if defined(USE_DRM)
 	drm_parse_config();
 	drm_parse_args(argc, argv);
+
+#else
+	(void)argc; (void)argv;
 
 	if (drm_fallback) {
 		int on_console = 0;
