@@ -618,7 +618,10 @@ int main(int argc, char **argv)
 			extern const char *shell_cmd;
 			char *sh = getenv("SHELL");
 			if (!sh || strstr(sh, "yaft")) sh = (char *)shell_cmd;
-			execl(sh, sh, "--login", (char *)NULL);
+			if (drm_exec_cmd)
+				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
+			else
+				execl(sh, sh, "--login", (char *)NULL);
 			perror("execl");
 			return EXIT_FAILURE;
 		}
@@ -634,7 +637,10 @@ int main(int argc, char **argv)
 			extern const char *shell_cmd;
 			char *sh = getenv("SHELL");
 			if (!sh || strstr(sh, "yaft")) sh = (char *)shell_cmd;
-			execl(sh, sh, "--login", (char *)NULL);
+			if (drm_exec_cmd)
+				execl(sh, sh, "-c", drm_exec_cmd, (char *)NULL);
+			else
+				execl(sh, sh, "--login", (char *)NULL);
 			perror("execl");
 		}
 #endif
