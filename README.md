@@ -37,8 +37,11 @@ yaft-drm -c "brow6el https://example.com"
 
 Full terminal with mouse support, powerline-enabled tmux status bars, and graphical capabilities on headless servers accessed via iDRAC, iLO, IPMI, Pi-KVM, or VM console.
 
+yaft-drm can also be used as a console kiosk launcher. Because `-c` executes a command directly instead of starting an interactive shell first, a VT console can boot straight into a dedicated application such as `tmux`, `brow6el`, a status dashboard, or another fixed-purpose terminal UI.
+
 ```bash
 yaft-drm -c "tmux new -s Console"
+yaft-drm -c "brow6el https://dashboard.example.com"
 ```
 
 ### Login Shell

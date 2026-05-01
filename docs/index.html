@@ -110,6 +110,9 @@ yaft-drm -c "tmux new -s Console"</code></pre>
 
             <h3 id="headless-administration">Headless Server Administration</h3>
             <p>Use a full terminal with mouse support and Nerd Font glyph rendering over BMC/KVM, IPMI, Pi-KVM, Cockpit noVNC, or a VM console.</p>
+            <p><code>yaft-drm</code> can also act as a console kiosk launcher. Because <code>-c</code> executes a command directly instead of starting an interactive shell first, a VT console can boot straight into a dedicated application such as <code>tmux</code>, <code>brow6el</code>, a status dashboard, or another fixed-purpose terminal UI.</p>
+            <pre><code>yaft-drm -c "tmux new -s Console"
+yaft-drm -c "brow6el https://dashboard.example.com"</code></pre>
 
             <h3 id="login-shell">Login Shell</h3>
             <p>Use <code>yaft-drm</code> as a user login shell on VT consoles while preserving normal SSH behavior through automatic bash fallback.</p>
