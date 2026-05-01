@@ -116,6 +116,7 @@ static void drm_parse_args(int argc, char **argv)
 }
 
 static int drm_mouse_fd = -1;
+static int drm_scroll_fd = -1;
 static int drm_mouse_x = 0, drm_mouse_y = 0;
 static int drm_mouse_cols = 80, drm_mouse_lines = 24;
 static int drm_mouse_px_w = 0, drm_mouse_px_h = 0;
@@ -135,19 +136,54 @@ static int drm_find_evdev_abs(void)
 		snprintf(path, sizeof(path), "/dev/input/event%d", n);
 		int fd = open(path, O_RDONLY | O_NONBLOCK);
 		if (fd < 0) continue;
-		unsigned long evbits = 0, absbits = 0;
+		unsigned long evbits = 0, absbits = 0, relbits = 0;
 		ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), &evbits);
 		if (evbits & (1 << EV_ABS)) {
 			ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), &absbits);
 			if ((absbits & (1 << ABS_X)) && (absbits & (1 << ABS_Y))) {
 				memset(name, 0, sizeof(name));
 				ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+				int matched = 0;
 				for (const char **d = bmc_names; *d; d++) {
-					if (strstr(name, *d)) {
-						fcntl(fd, F_SETFD, FD_CLOEXEC);
-						fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
-						return fd;
-					}
+					if (strstr(name, *d)) { matched = 1; break; }
+				}
+				if (matched) {
+					fcntl(fd, F_SETFD, FD_CLOEXEC);
+					fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
+					return fd;
+				}
+			}
+		}
+		close(fd);
+	}
+	return -1;
+}
+
+static int drm_find_scroll_device(void)
+{
+	char path[64];
+	char name[256];
+	const char *bmc_names[] = { "Avocent", "IPMI", "iLO", "AMI", "ATEN", "QEMU", "VMware", NULL };
+
+	for (int n = 0; n < 32; n++) {
+		snprintf(path, sizeof(path), "/dev/input/event%d", n);
+		int fd = open(path, O_RDONLY | O_NONBLOCK);
+		if (fd < 0) continue;
+		unsigned long evbits = 0, relbits = 0;
+		ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), &evbits);
+		if (evbits & (1 << EV_REL)) {
+			ioctl(fd, EVIOCGBIT(EV_REL, sizeof(relbits)), &relbits);
+			if (relbits & (1 << REL_WHEEL)) {
+				memset(name, 0, sizeof(name));
+				ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+				int matched = 0;
+				for (const char **d = bmc_names; *d; d++) {
+					if (strstr(name, *d)) { matched = 1; break; }
+				}
+				if (matched) {
+					fcntl(fd, F_SETFD, FD_CLOEXEC);
+					fprintf(stderr, "MOUSE: scroll wheel event%d (%s)\n", n, name);
+					return fd;
 				}
 			}
 		}
@@ -178,6 +214,13 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 			if (VERBOSE)
 				fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
 					drm_mouse_fd, drm_mouse_abs_max_x, drm_mouse_abs_max_y);
+			{
+				unsigned long relbits = 0;
+				ioctl(drm_mouse_fd, EVIOCGBIT(EV_REL, sizeof(relbits)), &relbits);
+				if (!(relbits & (1 << REL_WHEEL))) {
+					drm_scroll_fd = drm_find_scroll_device();
+				}
+			}
 			return;
 		}
 		if (drm_mouse_mode == 1) {
@@ -335,6 +378,17 @@ static void drm_mouse_emit(int master_fd, int buttons)
 	}
 }
 
+static void drm_mouse_scroll(int master_fd, int direction)
+{
+	if (!drm_mouse_reporting) return;
+	int cell_x = (drm_mouse_x / CELL_WIDTH) + 1;
+	int cell_y = (drm_mouse_y / CELL_HEIGHT) + 1;
+	int btn = (direction > 0) ? 64 : 65;
+	char buf[64];
+	int len = snprintf(buf, sizeof(buf), "[<%d;%d;%dM", btn, cell_x, cell_y);
+	if (len > 0) write(master_fd, buf, len);
+}
+
 static void drm_mouse_handle(int master_fd, struct framebuffer_t *fb)
 {
 	(void)fb;
@@ -350,6 +404,8 @@ static void drm_mouse_handle(int master_fd, struct framebuffer_t *fb)
 					drm_mouse_x = (int)((long)ev.value * drm_mouse_px_w / drm_mouse_abs_max_x);
 				else if (ev.code == ABS_Y)
 					drm_mouse_y = (int)((long)ev.value * drm_mouse_px_h / drm_mouse_abs_max_y);
+			} else if (ev.type == EV_REL && ev.code == REL_WHEEL) {
+				drm_mouse_scroll(master_fd, ev.value);
 			} else if (ev.type == EV_KEY) {
 				if (ev.code == BTN_LEFT) { if (ev.value) abs_buttons |= 1; else abs_buttons &= ~1; btn_changed = 1; }
 				else if (ev.code == BTN_RIGHT) { if (ev.value) abs_buttons |= 2; else abs_buttons &= ~2; btn_changed = 1; }
@@ -374,6 +430,7 @@ static void drm_mouse_handle(int master_fd, struct framebuffer_t *fb)
 			if (ev.type == EV_REL) {
 				if (ev.code == REL_X) drm_mouse_x += ev.value * 3;
 				else if (ev.code == REL_Y) drm_mouse_y += ev.value * 3;
+				else if (ev.code == REL_WHEEL) drm_mouse_scroll(master_fd, ev.value);
 			} else if (ev.type == EV_KEY) {
 				if (ev.code == BTN_LEFT) { if (ev.value) rel_buttons |= 1; else rel_buttons &= ~1; btn_changed = 1; }
 				else if (ev.code == BTN_RIGHT) { if (ev.value) rel_buttons |= 2; else rel_buttons &= ~2; btn_changed = 1; }
@@ -577,6 +634,10 @@ int check_fds(fd_set *fds, struct timeval *tv, int input, int master)
 		FD_SET(drm_mouse_fd, fds);
 		if (drm_mouse_fd > maxfd) maxfd = drm_mouse_fd;
 	}
+	if (drm_scroll_fd >= 0 && drm_scroll_fd != drm_mouse_fd) {
+		FD_SET(drm_scroll_fd, fds);
+		if (drm_scroll_fd > maxfd) maxfd = drm_scroll_fd;
+	}
 #endif
 	tv->tv_sec  = 0;
 	tv->tv_usec = SELECT_TIMEOUT;
@@ -713,6 +774,13 @@ int main(int argc, char **argv)
 			drm_mouse_handle(term.fd, &fb);
 			drm_overlay_cursor(&fb);
 			refresh(&fb, &term);
+		}
+		if (drm_scroll_fd >= 0 && drm_scroll_fd != drm_mouse_fd && FD_ISSET(drm_scroll_fd, &fds)) {
+			struct input_event ev;
+			while (read(drm_scroll_fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
+				if (ev.type == EV_REL && ev.code == REL_WHEEL)
+					drm_mouse_scroll(term.fd, ev.value);
+			}
 		}
 #endif
 	}
