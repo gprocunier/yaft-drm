@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>yaft-drm</title>
+    <meta name="description" content="A DRM/KMS fork of yaft for high-fidelity console terminal service on modern Linux kernels without the legacy fbdev device.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;700&family=Red+Hat+Mono:wght@400;500&family=Red+Hat+Text:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/site.css">
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <div class="site-header__inner">
+          <p class="eyebrow">yaft-drm Documentation</p>
+          <div class="site-brand">
+            <div>
+              <h1 class="site-brand__title"><a href="index.html">yaft-drm</a></h1>
+              <p class="site-brand__tagline">A DRM/KMS terminal for the bare Linux console, built for modern kernels, server consoles, Sixel graphics, mouse input, and tmux-heavy administration.</p>
+            </div>
+          </div>
+          <div class="site-header__actions">
+            <a href="https://github.com/gprocunier/yaft-drm"><kbd>GitHub</kbd></a>
+            <a href="https://copr.fedorainfracloud.org/coprs/greg-at-redhat/brow6el/"><kbd>COPR</kbd></a>
+            <a href="#installation"><kbd>Install</kbd></a>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        <div class="content-column">
+          <article class="markdown-body">
+            <p class="badge-row">
+              <a href="https://github.com/gprocunier/yaft-drm/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/gprocunier/yaft-drm"></a>
+              <img alt="DRM KMS" src="https://img.shields.io/badge/DRM%2FKMS-console-red">
+              <img alt="Fedora 43 and RHEL 10" src="https://img.shields.io/badge/Fedora%2043%2B%20%7C%20RHEL%2010%2B-ready-blue">
+              <img alt="Sixel" src="https://img.shields.io/badge/Sixel-enabled-brightgreen">
+            </p>
+
+            <figure class="media-frame media-frame--lead">
+              <img src="assets/yaft-drm-final.gif" alt="yaft-drm running a graphical terminal session on the Linux console">
+            </figure>
+
+            <p><code>yaft-drm</code> is a DRM/KMS fork of <a href="https://github.com/uobikiemukot/yaft">yaft</a>, the compact framebuffer terminal. It keeps the console-terminal idea alive on modern Linux systems where the legacy <code>/dev/fb0</code> device has been removed.</p>
+
+            <p>The project replaces the fbdev backend with DRM dumb buffers and adds the pieces expected from a practical server-console terminal: Sixel graphics, mouse reporting, adaptive cursor rendering, command launch, resolution selection, login-shell fallback, and clean console recovery.</p>
+
+            <h2 id="why-this-exists">Why This Exists</h2>
+            <p>Fedora 43, RHEL 10, and other modern Linux platforms are moving away from the legacy framebuffer character device. That breaks terminal emulators built directly on <code>/dev/fb0</code>, even though server operators still need a capable terminal on physical, virtual, and remote-management consoles.</p>
+
+            <p><code>yaft-drm</code> moves that terminal surface to DRM/KMS so a machine can still offer a full-screen console experience without X11, Wayland, or a desktop stack.</p>
+
+            <h2 id="what-it-enables">What It Enables</h2>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Console need</th>
+                    <th>yaft-drm behavior</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Modern display path</td>
+                    <td>Uses <code>/dev/dri/cardN</code> and DRM dumb buffers instead of <code>/dev/fb0</code>.</td>
+                  </tr>
+                  <tr>
+                    <td>Remote-management mouse</td>
+                    <td>Supports evdev absolute input for iDRAC, iLO, IPMI, Pi-KVM, QEMU, and VMware consoles.</td>
+                  </tr>
+                  <tr>
+                    <td>Graphical terminal apps</td>
+                    <td>Renders Sixel graphics for tools such as <a href="https://codeberg.org/janantos/brow6el">brow6el</a>.</td>
+                  </tr>
+                  <tr>
+                    <td>tmux administration</td>
+                    <td>Handles xterm SGR mouse reporting, powerline glyphs, status tabs, and clean DA behavior.</td>
+                  </tr>
+                  <tr>
+                    <td>Login-shell deployment</td>
+                    <td>Falls back to <code>/bin/bash --login</code> outside a real VT when configured as a user shell.</td>
+                  </tr>
+                  <tr>
+                    <td>Console recovery</td>
+                    <td>Restores signal, CRTC, and VT state on abnormal exit or normal shutdown.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h2 id="start-here">Start Here</h2>
+            <p>For Fedora 43 or RHEL 10 and newer, use the COPR package path. It installs the DRM terminal, the legacy fbdev build, the shell-init helper, and the man page.</p>
+
+            <pre><code>sudo dnf copr enable greg-at-redhat/brow6el
+sudo dnf install yaft</code></pre>
+
+            <p>Run the terminal directly, select a resolution, or launch straight into an application:</p>
+
+            <pre><code>yaft-drm
+yaft-drm --res 1920x1080
+yaft-drm -c "brow6el https://example.com"
+yaft-drm -c "tmux new -s Console"</code></pre>
+
+            <h2 id="use-cases">Use Cases</h2>
+            <h3 id="browser-on-console">Terminal Browser on the Console</h3>
+            <p>Run a Chromium-based terminal browser with Sixel graphics directly on a server console, with no desktop session required.</p>
+
+            <figure class="media-frame">
+              <img src="assets/yaft-screenshot.png" alt="yaft terminal screenshot with graphical console output">
+            </figure>
+
+            <h3 id="headless-administration">Headless Server Administration</h3>
+            <p>Use a full terminal with mouse support and Nerd Font glyph rendering over BMC/KVM, IPMI, Pi-KVM, Cockpit noVNC, or a VM console.</p>
+
+            <h3 id="login-shell">Login Shell</h3>
+            <p>Use <code>yaft-drm</code> as a user login shell on VT consoles while preserving normal SSH behavior through automatic bash fallback.</p>
+
+            <h2 id="installation">Installation</h2>
+            <h3 id="copr-package">Fedora 43 / RHEL 10+ COPR</h3>
+            <pre><code>sudo dnf copr enable greg-at-redhat/brow6el
+sudo dnf install yaft</code></pre>
+
+            <p>The package provides <code>yaft-drm</code> for DRM/KMS systems and <code>yaft</code> for kernels that still expose <code>/dev/fb0</code>.</p>
+
+            <h3 id="build-from-source">Build from Source</h3>
+            <pre><code>sudo dnf install gcc make ncurses libdrm-devel
+make yaft-drm
+sudo install -m755 yaft-drm /usr/local/bin/yaft-drm</code></pre>
+
+            <h3 id="login-shell-setup">Login Shell Setup</h3>
+            <pre><code>sudo usermod -aG video,input username
+sudo example-shell-init.sh --yaft-login
+sudo chsh username -s /usr/bin/yaft-drm</code></pre>
+
+            <p>When <code>fallback=true</code> is configured, SSH, tmux, scp, rsync, and other non-VT sessions continue into bash instead of trying to take over DRM.</p>
+
+            <h2 id="hardware">Validated Console Targets</h2>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Platform</th>
+                    <th>Display path</th>
+                    <th>Mouse path</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Dell PowerEdge iDRAC 8</td>
+                    <td>Matrox G200eR2</td>
+                    <td>Avocent USB absolute</td>
+                    <td>Validated</td>
+                  </tr>
+                  <tr>
+                    <td>Pi-KVM</td>
+                    <td>USB HDMI capture</td>
+                    <td>Pi-KVM HID absolute</td>
+                    <td>Validated</td>
+                  </tr>
+                  <tr>
+                    <td>JetKVM</td>
+                    <td>USB HDMI capture</td>
+                    <td>JetKVM HID absolute</td>
+                    <td>Validated</td>
+                  </tr>
+                  <tr>
+                    <td>KVM/QEMU</td>
+                    <td>QXL / Virtio VGA</td>
+                    <td>QEMU USB Tablet / VMware VMMouse</td>
+                    <td>Validated</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <aside class="side-column">
+          <section class="context-block context-block--meta context-block--golden">
+            <h2>Page Type</h2>
+            <p class="context-kicker"><span class="page-type-label page-type-label--golden">Project Overview</span></p>
+            <p class="context-copy"><strong>Entry point.</strong> High-level install and orientation page for the DRM/KMS yaft fork.</p>
+          </section>
+
+          <section class="context-block">
+            <h2>Primary Path</h2>
+            <ul class="path-list">
+              <li><a href="#installation"><strong>Install</strong><span>Enable COPR and install the RPM package.</span></a></li>
+              <li><a href="#start-here"><strong>Run</strong><span>Start the terminal, choose resolution, or launch a command.</span></a></li>
+              <li><a href="#login-shell-setup"><strong>Login Shell</strong><span>Use yaft-drm on VT consoles with SSH fallback.</span></a></li>
+            </ul>
+          </section>
+
+          <section class="context-block context-block--secondary">
+            <h2>Project Links</h2>
+            <ul class="path-list">
+              <li><a href="https://github.com/gprocunier/yaft-drm"><strong>GitHub Repo</strong><span>Source, releases, issues, and project context.</span></a></li>
+              <li><a href="https://github.com/gprocunier/yaft-drm/blob/main/README.md"><strong>Current README</strong><span>Detailed source documentation for this project.</span></a></li>
+              <li><a href="https://github.com/uobikiemukot/yaft"><strong>Upstream yaft</strong><span>The original framebuffer terminal project.</span></a></li>
+              <li><a href="https://github.com/gprocunier/calabi-shell"><strong>calabi-shell</strong><span>Companion shell and tmux environment setup.</span></a></li>
+            </ul>
+          </section>
+
+          <section class="toc-block">
+            <h2>On This Page</h2>
+            <ul>
+              <li><a href="#why-this-exists">Why This Exists</a></li>
+              <li><a href="#what-it-enables">What It Enables</a></li>
+              <li><a href="#start-here">Start Here</a></li>
+              <li><a href="#use-cases">Use Cases</a></li>
+              <li><a href="#installation">Installation</a></li>
+              <li><a href="#hardware">Validated Console Targets</a></li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="site-footer">
+        Built from repository docs on 2026-05-01.
+      </footer>
+    </div>
+  </body>
+</html>
