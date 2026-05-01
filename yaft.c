@@ -25,6 +25,8 @@ int drm_mouse_reporting = 0;
 static const char *drm_exec_cmd = NULL;
 static int drm_mouse_mode = 0; /* 0=auto, 1=evdev, 2=relative */
 static int drm_fallback = 0;
+int drm_list_modes = 0;
+static int drm_debug = 0;
 
 static const uint16_t arrow_cursor[16] = {
 	0xC000, 0xE000, 0xF000, 0xF800,
@@ -88,23 +90,47 @@ static void drm_parse_args(int argc, char **argv)
 
 {
 	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--res") == 0 && i + 1 < argc) {
-			int w, h;
-			if (strcmp(argv[i + 1], "list") == 0) {
+		if (strcmp(argv[i], "--res") == 0) {
+			if (i + 1 >= argc) {
 				drm_req_width = drm_req_height = -1;
-			} else if (sscanf(argv[i + 1], "%dx%d", &w, &h) == 2) {
-				drm_req_width = w;
-				drm_req_height = h;
+				drm_list_modes = 1;
 			} else {
-				fprintf(stderr, "invalid resolution '%s', use --res WIDTHxHEIGHT or --res list\n", argv[i + 1]);
-				exit(1);
+				int w, h;
+				if (strcmp(argv[i + 1], "list") == 0) {
+					drm_req_width = drm_req_height = -1;
+					drm_list_modes = 1;
+				} else if (sscanf(argv[i + 1], "%dx%d", &w, &h) == 2) {
+					drm_req_width = w;
+					drm_req_height = h;
+				} else {
+					drm_req_width = drm_req_height = -1;
+					drm_list_modes = 1;
+				}
+				i++;
 			}
-			i++;
 		} else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
 			drm_exec_cmd = argv[i + 1];
 			i++;
 		} else if (strcmp(argv[i], "--fallback") == 0) {
 			drm_fallback = 1;
+		} else if (strcmp(argv[i], "--debug") == 0) {
+			drm_debug = 1;
+		} else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+			fprintf(stderr,
+				"Usage: yaft-drm [OPTIONS]\n"
+				"\n"
+				"Options:\n"
+				"  --res WxH       Set display resolution\n"
+				"  --res list      List supported resolutions\n"
+				"  --mouse MODE    Mouse input: auto, evdev, relative\n"
+				"  --fallback      Fall back to bash if not on a VT console\n"
+				"  -c COMMAND      Run command instead of shell\n"
+				"  --debug         Show diagnostic output\n"
+				"  -h, --help      Show this help\n"
+				"\n"
+				"Config: /etc/yaft-drm.conf, ~/.yaft-drm.conf\n"
+				"See: man yaft-drm\n");
+			exit(0);
 		} else if (strcmp(argv[i], "--mouse") == 0 && i + 1 < argc) {
 			if (strcmp(argv[i + 1], "evdev") == 0) drm_mouse_mode = 1;
 			else if (strcmp(argv[i + 1], "relative") == 0) drm_mouse_mode = 2;
@@ -149,7 +175,7 @@ static int drm_find_evdev_abs(void)
 				}
 				if (matched) {
 					fcntl(fd, F_SETFD, FD_CLOEXEC);
-					fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
+					if (drm_debug) fprintf(stderr, "MOUSE: evdev absolute event%d (%s)\n", n, name);
 					return fd;
 				}
 			}
@@ -182,7 +208,7 @@ static int drm_find_scroll_device(void)
 				}
 				if (matched) {
 					fcntl(fd, F_SETFD, FD_CLOEXEC);
-					fprintf(stderr, "MOUSE: scroll wheel event%d (%s)\n", n, name);
+					if (drm_debug) fprintf(stderr, "MOUSE: scroll wheel event%d (%s)\n", n, name);
 					return fd;
 				}
 			}
@@ -212,7 +238,7 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 			if (ioctl(drm_mouse_fd, EVIOCGABS(ABS_Y), &absinfo) == 0)
 				drm_mouse_abs_max_y = absinfo.maximum > 0 ? absinfo.maximum : 1;
 			if (VERBOSE)
-				fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
+				if (drm_debug) fprintf(stderr, "MOUSE: evdev absolute fd=%d abs_max=%dx%d\n",
 					drm_mouse_fd, drm_mouse_abs_max_x, drm_mouse_abs_max_y);
 			{
 				unsigned long relbits = 0;
@@ -224,7 +250,7 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 			return;
 		}
 		if (drm_mouse_mode == 1) {
-			fprintf(stderr, "MOUSE: no evdev absolute device found\n");
+			if (drm_debug) fprintf(stderr, "MOUSE: no evdev absolute device found\n");
 			return;
 		}
 	}
@@ -235,10 +261,10 @@ static void drm_mouse_init(int width, int height, int cols, int lines)
 		fcntl(drm_mouse_fd, F_SETFD, FD_CLOEXEC);
 		drm_mouse_abs = 0;
 		if (VERBOSE)
-			fprintf(stderr, "MOUSE: PS/2 relative fd=%d\n", drm_mouse_fd);
+			if (drm_debug) fprintf(stderr, "MOUSE: PS/2 relative fd=%d\n", drm_mouse_fd);
 	} else {
 		if (VERBOSE)
-			fprintf(stderr, "MOUSE: no mouse device found\n");
+			if (drm_debug) fprintf(stderr, "MOUSE: no mouse device found\n");
 	}
 }
 
@@ -666,7 +692,9 @@ int main(int argc, char **argv)
 	drm_parse_config();
 	drm_parse_args(argc, argv);
 
-	if (drm_fallback) {
+	if (drm_list_modes) {
+		/* skip VT check — just open DRM, list modes, and exit */
+	} else if (drm_fallback) {
 		int on_console = 0;
 		int ttyfd = open("/dev/tty", O_RDWR);
 		if (ttyfd >= 0) {
@@ -692,6 +720,11 @@ int main(int argc, char **argv)
 #endif
 
 	if (!fb_init(&fb)) {
+#if defined(USE_DRM)
+		if (drm_list_modes) {
+			return EXIT_SUCCESS;
+		}
+#endif
 		logging(FATAL, "framebuffer initialize failed\n");
 #if defined(USE_DRM)
 		if (drm_fallback) {

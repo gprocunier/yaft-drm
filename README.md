@@ -17,7 +17,7 @@ Modern Linux distributions (Fedora 43+, RHEL 10+) have disabled the legacy frame
 - **True color approximation** — 24-bit RGB SGR sequences mapped to the nearest 256-color palette entry
 - **Cursor blink** — ~1Hz block cursor blink on idle
 - **Login shell support** — use as `/etc/shells` login shell with automatic fallback to bash over SSH
-- **Configurable resolution** — `--res WxH`, `--res list`, or `~/.yaft-drm.conf`
+- **Configurable resolution** — `--res WxH`, `--res list`, or `~/.yaft-drm.conf`. Invalid or unavailable resolutions list supported modes and exit
 - **Mouse mode selection** — `--mouse evdev|relative|auto` for different console environments
 - **Command execution** — `-c "command"` to launch directly into an application
 - **Clean tmux integration** — xterm SGR mouse reporting (modes 1000/1002/1006), proper DA handling, powerline rendering, mouse click support on tmux window tabs
@@ -94,6 +94,12 @@ yaft-drm -c "brow6el https://example.com"
 # Force mouse mode
 yaft-drm --mouse evdev      # BMC/KVM absolute positioning
 yaft-drm --mouse relative   # PS/2 relative
+
+# Debug output (mouse device detection)
+yaft-drm --debug
+
+# Show help
+yaft-drm --help
 ```
 
 ## Configuration
@@ -245,6 +251,7 @@ See the [calabi-shell](https://github.com/gprocunier/calabi-shell) repository fo
 - PS/2 relative mouse fallback
 - Save/restore cursor with adaptive contrast (no XOR artifacts)
 - xterm SGR mouse reporting (modes 1000/1002/1006) gated on application enable
+- Scroll wheel support (button 64/65) with separate scroll device fallback
 - Cursor blink (~1Hz)
 - True color SGR (`38;2;R;G;B`) to 256-color approximation
 - DA response suppressed to prevent tmux escape leaks
@@ -253,6 +260,7 @@ See the [calabi-shell](https://github.com/gprocunier/calabi-shell) repository fo
 - `-c` command argument and config file support
 - `--res WxH` / `--res list` resolution selection
 - `--mouse evdev|relative|auto` input mode selection
+- `--debug` diagnostic output, `-h`/`--help` usage summary
 - Terminus + Meslo Nerd Font icons for powerline rendering
 
 ## Requirements

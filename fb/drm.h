@@ -173,6 +173,8 @@ bool set_fbinfo(int fd, struct fb_info_t *info)
 			}
 		}
 		if (!found) {
+			extern int drm_list_modes;
+			drm_list_modes = 1;
 			fprintf(stderr, "resolution %dx%d not available. Supported modes:\n",
 				drm_req_width, drm_req_height);
 			for (i = 0; i < conn->count_modes; i++) {
