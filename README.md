@@ -1,6 +1,6 @@
 # yaft-drm
 
-![yaft-drm demo](yaft-drm-final.gif)
+![yaft-drm demonstration](yaft-drm-final.gif)
 
 A DRM/KMS fork of [yaft](https://github.com/uobikiemukot/yaft) (yet another framebuffer terminal) that provides high-fidelity console terminal services on modern Linux kernels where the legacy `/dev/fb0` framebuffer device has been removed (`CONFIG_FB_DEVICE=n`).
 
