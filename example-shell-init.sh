@@ -90,8 +90,8 @@ install_calabi_shell() {
   git clone https://github.com/gprocunier/calabi-shell.git "$tmpdir/calabi-shell"
 
   if $DO_FORCE; then
-    log "running calabi-shell install --system (--force: bypassing distro check)"
-    (cd "$tmpdir/calabi-shell" && sed -i 's/check_platform_support/# check_platform_support/' install.sh && ./install.sh --system)
+    log "running calabi-shell install --system --force"
+    (cd "$tmpdir/calabi-shell" && ./install.sh --system --force)
   else
     log "running calabi-shell install --system"
     (cd "$tmpdir/calabi-shell" && ./install.sh --system)
