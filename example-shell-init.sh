@@ -117,7 +117,7 @@ install_redhat_theme() {
     cp "$script_dir/redhat-tmux-theme.sh" "$theme_dir/dark.sh"
   else
     log "redhat-tmux-theme.sh not found, fetching from upstream"
-    curl -fsSL "https://raw.githubusercontent.com/gprocunier/calabi-shell/main/redhat-tmux-theme.sh" \
+    curl -fsSL "https://raw.githubusercontent.com/gprocunier/yaft-drm/main/redhat-tmux-theme.sh" \
       -o "$theme_dir/dark.sh"
   fi
   chmod 644 "$theme_dir/dark.sh"
